@@ -12,6 +12,24 @@ struct RBCAIAgentApp: App {
     }
 }
 
+struct ContentView: View {
+    var body: some View {
+        TabView {
+            SimpleChatView()
+                .tabItem {
+                    Image(systemName: "message.fill")
+                    Text("Chat")
+                }
+            
+            SimpleDashboardView()
+                .tabItem {
+                    Image(systemName: "chart.bar.fill")
+                    Text("Dashboard")
+                }
+        }
+    }
+}
+
 // MARK: - Chat View with Voice and AI Integration
 struct SimpleChatView: View {
     // MARK: - State Properties
@@ -475,11 +493,35 @@ struct SimpleChatView: View {
     
     // MARK: - Message Functions
     private func sendCallMessage() {
-        sendMessageWithVoice()
+        sendMessage()
     }
     
     private func sendMessage() {
-        sendMessageWithVoice()
+        guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return; }
+        
+        let userMessage = SimpleChatMessage(id: UUID().uuidString, content: messageText, isFromUser: true, timestamp: Date())
+        messages.append(userMessage)
+        
+        let input = messageText
+        messageText = ""
+        isTyping = true
+        
+        // Generate AI response
+        Task {
+            do {
+                let response = try await llmService.generateResponse(for: input)
+                let aiMessage = SimpleChatMessage(id: UUID().uuidString, content: response, isFromUser: false, timestamp: Date())
+                
+                await MainActor.run {
+                    startTypingAnimation(message: aiMessage)
+                }
+            } catch {
+                await MainActor.run {
+                    let errorMessage = SimpleChatMessage(id: UUID().uuidString, content: "I'm having trouble connecting right now. Please try again later.", isFromUser: false, timestamp: Date())
+                    messages.append(errorMessage)
+                }
+            }
+        }
     }
     
     // MARK: - Debug Helper
@@ -490,45 +532,6 @@ struct SimpleChatView: View {
         typingTimer = nil
         currentTypingMessage = nil
         typingText = ""
-    }
-    
-    private func sendMessageWithVoice() {
-        print("📝 Send message called with: '\(messageText)'")
-        guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { 
-            print("⚠️ Message is empty, not sending")
-            return;
-        }
-        
-        let userMessage = SimpleChatMessage(id: UUID().uuidString, content: messageText, isFromUser: true, timestamp: Date())
-        messages.append(userMessage)
-        print("✅ User message added")
-        
-        let input = messageText
-        messageText = ""
-        isTyping = true
-        print("🔄 Typing state set to true")
-        
-        // Generate AI response
-        Task {
-            print("🤖 Starting AI response generation...")
-            do {
-                let response = try await llmService.generateResponse(for: input)
-                print("✅ AI response received: \(response)")
-                let aiMessage = SimpleChatMessage(id: UUID().uuidString, content: response, isFromUser: false, timestamp: Date())
-                
-                await MainActor.run {
-                    startTypingAnimation(message: aiMessage)
-                }
-            } catch {
-                print("❌ AI response failed: \(error)")
-                await MainActor.run {
-                    // Reset isTyping on error to enable TextField
-                    isTyping = false
-                    let errorMessage = SimpleChatMessage(id: UUID().uuidString, content: "I'm having trouble connecting right now. Please try again later.", isFromUser: false, timestamp: Date())
-                    messages.append(errorMessage)
-                }
-            }
-        }
     }
     
     // MARK: - Typing Animation
@@ -949,6 +952,25 @@ class SimpleVoiceService: NSObject, ObservableObject {
     }
 }
 
+// MARK: - Delegates
+extension SimpleVoiceService: SFSpeechRecognizerDelegate {
+    func speechRecognizer(_ speechRecognizer: SFSpeechRecognizer, availabilityDidChange available: Bool) {
+        DispatchQueue.main.async {
+            self.isAuthorized = available && self.isAuthorized
+        }
+    }
+}
+
+extension SimpleVoiceService: AVSpeechSynthesizerDelegate {
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        isSpeaking = false
+        // Automatically restart listening after speaking in call mode
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.startListening()
+        }
+    }
+}
+
 // MARK: - AI Service
 class RealLLMService: ObservableObject {
     // MARK: - Published Properties
@@ -1094,39 +1116,19 @@ enum LLMError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return "Invalid API URL"
+            return "Invalid URL"
         case .encodingError:
             return "Failed to encode request"
         case .noInternet:
-            return "No internet connection. Please check your network and try again."
+            return "No internet connection"
         case .serverError(let code):
-            return "Server error with code \(code). Please try again later."
+            return "Server error with code \(code)"
         case .unknownError(let error):
-            return "An unexpected error occurred: \(error.localizedDescription)"
+            return "Unknown error: \(error.localizedDescription)"
         }
     }
 }
 
-// MARK: - Delegates
-extension SimpleVoiceService: SFSpeechRecognizerDelegate {
-    func speechRecognizer(_ speechRecognizer: SFSpeechRecognizer, availabilityDidChange available: Bool) {
-        DispatchQueue.main.async {
-            self.isAuthorized = available && self.isAuthorized
-        }
-    }
-}
-
-extension SimpleVoiceService: AVSpeechSynthesizerDelegate {
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        isSpeaking = false
-        // Automatically restart listening after speaking in call mode
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.startListening()
-        }
-    }
-}
-
-// MARK: - Preview
 #Preview {
     ContentView()
 }

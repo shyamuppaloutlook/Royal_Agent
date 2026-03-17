@@ -2,7 +2,6 @@ import Foundation
 import SwiftUI
 import Combine
 import CoreML
-import CreateML
 
 class MLService: ObservableObject {
     @Published var isTraining: Bool = false

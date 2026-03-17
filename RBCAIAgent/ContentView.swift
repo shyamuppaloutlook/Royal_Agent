@@ -1,20 +1,15 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var dataManager = RBCDataManager()
-    @StateObject private var aiAgent = RBCAIAgent(dataManager: RBCDataManager())
-    
     var body: some View {
         TabView {
-            ChatView()
-                .environmentObject(aiAgent)
+            SimpleChatView()
                 .tabItem {
                     Image(systemName: "message")
                     Text("Chat")
                 }
             
-            DashboardView()
-                .environmentObject(dataManager)
+            SimpleDashboardView()
                 .tabItem {
                     Image(systemName: "chart.bar")
                     Text("Dashboard")

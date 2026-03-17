@@ -695,13 +695,6 @@ struct ProactiveInsight {
     let generatedAt: Date = Date()
 }
 
-enum InsightType {
-    case spendingAnomaly, savingsOpportunity, cashFlowPattern, accountOptimization
-    case costOptimization, interestOptimization, goalAlert, goalOpportunity
-    case investmentOpportunity, taxOptimization, riskAlert, concentrationRisk
-    case incomeRisk, seasonalAlert, seasonalPreparation, behavioralPattern
-    case personalizationOpportunity
-}
 
 enum InsightPriority: Int {
     case low = 1, medium = 2, high = 3, critical = 4

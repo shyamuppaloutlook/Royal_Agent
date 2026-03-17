@@ -30,7 +30,7 @@ enum ChatIntent {
     case unknown
     
     static func recognize(from text: String) -> ChatIntent {
-        let lowercase = text.lowercased(
+        let lowercase = text.lowercased()
         
         if lowercase.contains("balance") || lowercase.contains("how much") {
             return .balanceInquiry

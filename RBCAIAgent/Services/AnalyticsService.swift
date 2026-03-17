@@ -37,7 +37,7 @@ class AnalyticsService: ObservableObject {
         case notification = "Notification"
         case search = "Search"
         case export = "Export"
-        case import = "Import"
+        case dataImport = "Import"
         
         var category: EventCategory {
             switch self {

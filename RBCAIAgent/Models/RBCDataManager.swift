@@ -330,7 +330,6 @@ struct DataValidationResult {
     let warnings: [String]
     let isValid: Bool
 }
-}
 
 // MARK: - Mock Data Extensions
 

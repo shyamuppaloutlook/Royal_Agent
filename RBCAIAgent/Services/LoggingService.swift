@@ -128,7 +128,7 @@ class LoggingService: ObservableObject {
         case controller = "Controller"
         case manager = "Manager"
         case utility = "Utility"
-        case extension = "Extension"
+        case appExtension = "Extension"
         case widget = "Widget"
         case watch = "Watch"
         case mac = "Mac"

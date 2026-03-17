@@ -777,9 +777,6 @@ struct PredictiveInsight {
     let actionable: Bool
 }
 
-enum InsightType {
-    case netWorthProjection, savingsRateWarning, incomeVolatility, spendingAnomaly, investmentOpportunity
-}
 
 struct Recommendation {
     let type: RecommendationType

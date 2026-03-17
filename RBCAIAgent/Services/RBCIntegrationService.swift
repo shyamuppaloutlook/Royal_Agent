@@ -765,7 +765,8 @@ enum ExportFormat: String {
 
 // MARK: - Keychain Helper
 
-import KeychainAccess
+import Foundation
+import Security
 
 class Keychain {
     private let service: String
@@ -775,17 +776,53 @@ class Keychain {
     }
     
     func set(_ value: String, key: String) throws {
-        let keychain = KeychainAccess.Keychain(service: service)
-        try keychain.set(value, key: key)
+        let data = value.data(using: .utf8)!
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecValueData as String: data
+        ]
+        
+        // Delete existing item first
+        SecItemDelete(query as CFDictionary)
+        
+        // Add new item
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: nil)
+        }
     }
     
     func get(_ key: String) -> String? {
-        let keychain = KeychainAccess.Keychain(service: service)
-        return try? keychain.get(key)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        
+        guard status == errSecSuccess, let data = result as? Data else {
+            return nil
+        }
+        
+        return String(data: data, encoding: .utf8)
     }
     
     func remove(_ key: String) throws {
-        let keychain = KeychainAccess.Keychain(service: service)
-        try keychain.remove(key)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: key
+        ]
+        
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status), userInfo: nil)
+        }
     }
 }

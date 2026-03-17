@@ -12,6 +12,23 @@ struct RBCAIAgentApp: App {
     }
 }
 
+// MARK: - Main Content View
+struct ContentView: View {
+    var body: some View {
+        TabView {
+            SimpleChatView()
+                .tabItem {
+                    Label("Chat", systemImage: "message.fill")
+                }
+            
+            SimpleDashboardView()
+                .tabItem {
+                    Label("Dashboard", systemImage: "chart.bar.fill")
+                }
+        }
+    }
+}
+
 // MARK: - Chat View with Voice and AI Integration
 struct SimpleChatView: View {
     // MARK: - State Properties
@@ -25,7 +42,6 @@ struct SimpleChatView: View {
     @State private var callDuration: TimeInterval = 0
     @State private var callTimer: Timer?
     @State private var currentTypingMessage: SimpleChatMessage?
-    @State private var typingText: String = ""
     @State private var typingTimer: Timer?
     
     // MARK: - Body
@@ -51,14 +67,14 @@ struct SimpleChatView: View {
                 voiceService.requestPermissions()
             }
             .onChange(of: voiceService.transcript) { newValue in
-                if !newValue.isEmpty {
+                if !newValue.isEmpty && showCallInterface {
                     messageText = newValue
                 }
             }
             .onChange(of: voiceService.finalTranscript) { newValue in
-                if !newValue.isEmpty {
+                if !newValue.isEmpty && showCallInterface {
                     messageText = newValue
-                    sendMessage()
+                    sendCallMessage()
                     voiceService.clearTranscript()
                 }
             }
@@ -187,19 +203,10 @@ struct SimpleChatView: View {
     // MARK: - Status Section
     private var statusSection: some View {
         VStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Text(voiceService.isListening ? "Listening..." : voiceService.isSpeaking ? "Speaking..." : "On Call")
-                    .font(.title3)
-                    .fontWeight(.medium)
-                    .foregroundColor(.white)
-                
-                // Mute indicator
-                if !voiceService.isListening && !voiceService.isSpeaking {
-                    Image(systemName: "mic.slash.fill")
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
-            }
+            Text(voiceService.isListening ? "Listening..." : voiceService.isSpeaking ? "Speaking..." : "On Call")
+                .font(.title3)
+                .fontWeight(.medium)
+                .foregroundColor(.white)
             
             // Live Transcription
             if !voiceService.transcript.isEmpty {
@@ -220,7 +227,7 @@ struct SimpleChatView: View {
     // MARK: - Controls Section
     private var controlsSection: some View {
         HStack(spacing: 60) {
-            // Mute/Unmute Button
+            // Mute Button
             ControlButton(
                 icon: voiceService.isListening ? "mic.fill" : "mic.slash.fill",
                 action: {
@@ -230,8 +237,7 @@ struct SimpleChatView: View {
                         voiceService.startListening()
                     }
                 },
-                color: voiceService.isListening ? .white.opacity(0.2) : .red.opacity(0.3),
-                isLarge: false
+                color: .white.opacity(0.2)
             )
             
             // End Call Button
@@ -248,8 +254,7 @@ struct SimpleChatView: View {
                 action: {
                     // Future keypad functionality
                 },
-                color: .white.opacity(0.2),
-                isLarge: false
+                color: .white.opacity(0.2)
             )
         }
         .padding(.bottom, 40)
@@ -298,14 +303,6 @@ struct SimpleChatView: View {
             
             Spacer()
             
-            if isTyping {
-                Button("Reset") {
-                    resetTypingState()
-                }
-                .font(.caption)
-                .foregroundColor(.orange)
-            }
-            
             Button("Stop") {
                 voiceService.stopListening()
             }
@@ -352,26 +349,6 @@ struct SimpleChatView: View {
                             .foregroundColor(voiceService.isVoiceEnabled ? .blue : .gray)
                     }
                 }
-                
-                // Voice Input Button
-                Button(action: {
-                    if voiceService.isListening {
-                        voiceService.stopListening()
-                    } else {
-                        voiceService.startListening()
-                    }
-                }) {
-                    ZStack {
-                        Circle()
-                            .fill(voiceService.isListening ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
-                            .frame(width: 44, height: 44)
-                        Image(systemName: voiceService.isListening ? "mic.fill" : "mic")
-                            .font(.title2)
-                            .foregroundColor(voiceService.isListening ? .red : .green)
-                    }
-                }
-                .scaleEffect(voiceService.isListening ? 1.1 : 1.0)
-                .animation(.easeInOut(duration: 0.2), value: voiceService.isListening)
                 
                 // Text Input
                 TextField("Ask about your finances...", text: $messageText)
@@ -434,11 +411,9 @@ struct SimpleChatView: View {
         let welcomeMessage = SimpleChatMessage(id: UUID().uuidString, content: "Hello! Thanks for calling RBC Assistant. How can I help you today?", isFromUser: false, timestamp: Date())
         messages.append(welcomeMessage)
         
-        // Speak welcome only if voice is enabled
-        if voiceService.isVoiceEnabled {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                voiceService.speak("Hello! Thanks for calling RBC Assistant. How can I help you today?")
-            }
+        // Speak welcome
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            voiceService.speak("Hello! Thanks for calling RBC Assistant. How can I help you today?")
         }
     }
     
@@ -482,50 +457,29 @@ struct SimpleChatView: View {
         sendMessageWithVoice()
     }
     
-    // MARK: - Debug Helper
-    private func resetTypingState() {
-        isTyping = false
-        voiceService.stopListening()
-        typingTimer?.invalidate()
-        typingTimer = nil
-        currentTypingMessage = nil
-        typingText = ""
-    }
-    
     private func sendMessageWithVoice() {
-        print("📝 Send message called with: '\(messageText)'")
-        guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { 
-            print("⚠️ Message is empty, not sending")
-            return;
-        }
+        guard !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         
         let userMessage = SimpleChatMessage(id: UUID().uuidString, content: messageText, isFromUser: true, timestamp: Date())
         messages.append(userMessage)
-        print("✅ User message added")
         
         let input = messageText
         messageText = ""
         isTyping = true
-        print("🔄 Typing state set to true")
         
         // Generate AI response
         Task {
-            print("🤖 Starting AI response generation...")
             do {
                 let response = try await llmService.generateResponse(for: input)
-                print("✅ AI response received: \(response)")
                 let aiMessage = SimpleChatMessage(id: UUID().uuidString, content: response, isFromUser: false, timestamp: Date())
                 
                 await MainActor.run {
                     startTypingAnimation(message: aiMessage)
                 }
             } catch {
-                print("❌ AI response failed: \(error)")
                 await MainActor.run {
-                    // Reset isTyping on error to enable TextField
-                    isTyping = false
                     let errorMessage = SimpleChatMessage(id: UUID().uuidString, content: "I'm having trouble connecting right now. Please try again later.", isFromUser: false, timestamp: Date())
-                    messages.append(errorMessage)
+                    startTypingAnimation(message: errorMessage)
                 }
             }
         }
@@ -554,11 +508,9 @@ struct SimpleChatView: View {
                 currentTypingMessage = nil
                 typingText = ""
                 
-                // Speak response only if voice is enabled
-                if voiceService.isVoiceEnabled {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        voiceService.speak(fullText)
-                    }
+                // Speak response
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    voiceService.speak(fullText)
                 }
             }
         }
@@ -956,84 +908,52 @@ class RealLLMService: ObservableObject {
     @Published var error: String?
     
     // MARK: - Private Properties
-    private let apiKey = "AIzaSyAmlWf2ZfoB1yWtBd6Nqud2MeV0RLFXGcU" // Gemini API key
-    private let baseURL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+    private let apiKey = "YOUR_API_KEY_HERE" // User should replace this
+    private let baseURL = "https://api.openai.com/v1/chat/completions"
     
     // MARK: - Public Methods
     func generateResponse(for input: String) async throws -> String {
-        print("🔍 Generating response for: \(input)")
         isLoading = true
         error = nil
         defer { isLoading = false }
         
-        // Check if API key is configured
-        if apiKey.contains("demo") || apiKey.contains("YOUR_API_KEY_HERE") || apiKey.isEmpty {
-            print("📝 Using fallback response")
-            return getFallbackResponse(for: input)
-        }
-        
-        print("🌐 Using Gemini API")
         // Create system prompt
         let systemPrompt = """
         You are a helpful RBC (Royal Bank of Canada) AI assistant. You provide professional, accurate, and helpful information about banking, finances, and RBC services. Always be polite, professional, and helpful. If you don't know specific account details, explain that you'd need to access their actual account information. Provide general guidance and suggest they contact RBC directly for specific account queries.
         """
         
-        let fullPrompt = "\(systemPrompt)\n\nUser: \(input)"
-        print("📤 Full prompt: \(fullPrompt)")
-        
-        let requestBody: [String: Any] = [
-            "contents": [
-                [
-                    "parts": [
-                        ["text": fullPrompt]
-                    ]
-                ]
-            ],
-            "generationConfig": [
-                "temperature": 0.7,
-                "maxOutputTokens": 150
-            ]
+        let messages = [
+            ["role": "system", "content": systemPrompt],
+            ["role": "user", "content": input]
         ]
         
-        guard let url = URL(string: "\(baseURL)?key=\(apiKey)") else {
-            print("❌ Invalid URL")
+        let requestBody: [String: Any] = [
+            "model": "gpt-3.5-turbo",
+            "messages": messages,
+            "max_tokens": 150,
+            "temperature": 0.7
+        ]
+        
+        guard let url = URL(string: baseURL) else {
             throw LLMError.invalidURL
         }
         
-        print("🌍 Request URL: \(url)")
-        
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-            print("📦 Request body created")
         } catch {
-            print("❌ Encoding error: \(error)")
             throw LLMError.encodingError
         }
         
         do {
-            print("🚀 Making API request...")
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            if let httpResponse = response as? HTTPURLResponse {
-                print("📊 Response status: \(httpResponse.statusCode)")
-                if httpResponse.statusCode != 200 {
-                    let responseString = String(data: data, encoding: .utf8) ?? "No data"
-                    print("❌ Server error response: \(responseString)")
-                    throw LLMError.serverError(httpResponse.statusCode)
-                }
-            }
-            
-            print("📄 Response data: \(String(data: data, encoding: .utf8) ?? "No data")")
-            let geminiResponse = try JSONDecoder().decode(GeminiResponse.self, from: data)
-            let result = geminiResponse.candidates.first?.content.parts.first?.text ?? "I'm sorry, I couldn't generate a response."
-            print("✅ Generated response: \(result)")
-            return result
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let response = try JSONDecoder().decode(OpenAIResponse.self, from: data)
+            return response.choices.first?.message.content ?? "I'm sorry, I couldn't generate a response."
         } catch {
-            print("❌ API error: \(error)")
             if let urlError = error as? URLError, urlError.code == .notConnectedToInternet {
                 throw LLMError.noInternet
             } else if let httpResponse = error as? HTTPURLResponse {
@@ -1043,44 +963,20 @@ class RealLLMService: ObservableObject {
             }
         }
     }
-    
-    // MARK: - Fallback Responses
-    private func getFallbackResponse(for input: String) -> String {
-        let lowercaseInput = input.lowercased()
-        
-        if lowercaseInput.contains("balance") || lowercaseInput.contains("account") {
-            return "Your current account balance is $2,500.00. This includes your checking and savings accounts combined."
-        } else if lowercaseInput.contains("transfer") || lowercaseInput.contains("send") {
-            return "I can help you transfer money. You can transfer funds between your RBC accounts or to other banks. Would you like to make a transfer?"
-        } else if lowercaseInput.contains("bill") || lowercaseInput.contains("payment") {
-            return "You have 3 upcoming bills: Hydro ($85), Internet ($60), and Credit Card ($450). Would you like to pay any of these?"
-        } else if lowercaseInput.contains("invest") || lowercaseInput.contains("investment") {
-            return "Your investment portfolio is currently valued at $15,000 with a 5.2% return this year. Would you like to see your investment options?"
-        } else if lowercaseInput.contains("help") || lowercaseInput.contains("hello") || lowercaseInput.contains("hi") {
-            return "Hello! I'm your RBC AI Assistant. I can help you with account balances, transfers, bill payments, investments, and general banking questions. How can I assist you today?"
-        } else if lowercaseInput.contains("thank") {
-            return "You're welcome! Is there anything else I can help you with today?"
-        } else {
-            return "I understand you're asking about: \(input). As an RBC AI Assistant, I'm here to help with your banking needs. Could you please provide more details about what you'd like to know?"
-        }
-    }
 }
 
 // MARK: - AI Response Models
-struct GeminiResponse: Codable {
-    let candidates: [Candidate]
+struct OpenAIResponse: Codable {
+    let choices: [Choice]
 }
 
-struct Candidate: Codable {
-    let content: Content
+struct Choice: Codable {
+    let message: Message
 }
 
-struct Content: Codable {
-    let parts: [Part]
-}
-
-struct Part: Codable {
-    let text: String
+struct Message: Codable {
+    let role: String
+    let content: String
 }
 
 // MARK: - Error Types
@@ -1119,10 +1015,6 @@ extension SimpleVoiceService: SFSpeechRecognizerDelegate {
 extension SimpleVoiceService: AVSpeechSynthesizerDelegate {
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         isSpeaking = false
-        // Automatically restart listening after speaking in call mode
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.startListening()
-        }
     }
 }
 

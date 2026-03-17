@@ -122,7 +122,7 @@ struct PrivacySettings {
 
 struct AccountInsight {
     let id: String
-    let type: InsightType
+    // let type: InsightType
     let title: String
     let description: String
     let severity: InsightSeverity
@@ -131,13 +131,32 @@ struct AccountInsight {
     let actionable: Bool
 }
 
-enum InsightType: String {
+enum InsightType: String, CaseIterable {
     case spendingPattern = "Spending Pattern"
     case unusualActivity = "Unusual Activity"
     case savingsOpportunity = "Savings Opportunity"
     case billReminder = "Bill Reminder"
     case budgetAlert = "Budget Alert"
     case investmentTip = "Investment Tip"
+    case netWorthProjection = "Net Worth Projection"
+    case savingsRateWarning = "Savings Rate Warning"
+    case incomeVolatility = "Income Volatility"
+    case spendingAnomaly = "Spending Anomaly"
+    case investmentOpportunity = "Investment Opportunity"
+    case cashFlowPattern = "Cash Flow Pattern"
+    case accountOptimization = "Account Optimization"
+    case costOptimization = "Cost Optimization"
+    case interestOptimization = "Interest Optimization"
+    case goalAlert = "Goal Alert"
+    case goalOpportunity = "Goal Opportunity"
+    case taxOptimization = "Tax Optimization"
+    case riskAlert = "Risk Alert"
+    case concentrationRisk = "Concentration Risk"
+    case incomeRisk = "Income Risk"
+    case seasonalAlert = "Seasonal Alert"
+    case seasonalPreparation = "Seasonal Preparation"
+    case behavioralPattern = "Behavioral Pattern"
+    case personalizationOpportunity = "Personalization Opportunity"
     
     var icon: String {
         switch self {
