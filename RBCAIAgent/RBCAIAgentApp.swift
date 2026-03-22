@@ -2,6 +2,12 @@ import SwiftUI
 import AVFoundation
 import Speech
 
+// MARK: - RBC Brand
+extension Color {
+    static let rbcBlue = Color(red: 0/255, green: 93/255, blue: 170/255)
+    static let rbcBlueDark = Color(red: 0/255, green: 70/255, blue: 130/255)
+}
+
 // MARK: - App Entry Point
 @main
 struct RBCAIAgentApp: App {
@@ -44,9 +50,20 @@ struct SimpleChatView: View {
                     chatInterfaceView
                 }
             }
-            .navigationTitle("RBC Assistant")
-            .navigationBarTitleDisplayMode(.large)
-            .background(Color(.systemBackground))
+            .navigationTitle("RBC")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.rbcBlue, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(action: startCall) {
+                        Image(systemName: "phone.fill")
+                            .foregroundColor(.white)
+                    }
+                    .disabled(voiceService.isListening || voiceService.isSpeaking)
+                }
+            }
+            .background(Color(.systemGroupedBackground))
             .onAppear {
                 voiceService.requestPermissions()
                 pulseAnimation = true
@@ -61,6 +78,13 @@ struct SimpleChatView: View {
                     messageText = newValue
                     sendMessage()
                     voiceService.clearTranscript()
+                }
+            }
+            .onChange(of: voiceService.isSpeaking) { isSpeaking in
+                if !isSpeaking && voiceService.shouldAutoRestartListening && showCallInterface {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        voiceService.startListening(contextualStrings: extractContextKeywords(from: messages))
+                    }
                 }
             }
         }
@@ -83,7 +107,7 @@ struct SimpleChatView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            LinearGradient(colors: [.blue.opacity(0.8), .blue], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [.rbcBlue, .rbcBlueDark], startPoint: .top, endPoint: .bottom)
         )
     }
     
@@ -117,7 +141,7 @@ struct SimpleChatView: View {
                 Spacer()
                 
                 VStack(spacing: 4) {
-                    Text("RBC Assistant")
+                    Text("RBC Royal Agent")
                         .font(.title3)
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
@@ -127,17 +151,6 @@ struct SimpleChatView: View {
                 }
                 
                 Spacer()
-                
-                Button(action: {
-                    voiceService.isVoiceEnabled.toggle()
-                }) {
-                    Image(systemName: voiceService.isVoiceEnabled ? "speaker.wave.3.fill" : "speaker.slash.fill")
-                        .font(.title2)
-                        .foregroundColor(.white)
-                        .frame(width: 44, height: 44)
-                        .background(Color.white.opacity(0.2))
-                        .clipShape(Circle())
-                }
             }
             .padding(.horizontal)
         }
@@ -158,9 +171,9 @@ struct SimpleChatView: View {
                 
                 // Main Circle
                 Circle()
-                    .fill(LinearGradient(colors: [.blue, .blue.opacity(0.7)], startPoint: .top, endPoint: .bottom))
+                    .fill(LinearGradient(colors: [.rbcBlue, .rbcBlueDark], startPoint: .top, endPoint: .bottom))
                     .frame(width: 180, height: 180)
-                    .shadow(color: .blue.opacity(0.4), radius: 30, x: 0, y: 15)
+                    .shadow(color: .rbcBlue.opacity(0.5), radius: 30, x: 0, y: 15)
                     .overlay(
                         VStack(spacing: 8) {
                             Image(systemName: "building.columns.fill")
@@ -220,38 +233,17 @@ struct SimpleChatView: View {
     
     // MARK: - Controls Section
     private var controlsSection: some View {
-        HStack(spacing: 60) {
-            // Mute/Unmute Button
+        HStack(spacing: 50) {
             ControlButton(
                 icon: voiceService.isListening ? "mic.fill" : "mic.slash.fill",
                 action: {
-                    if voiceService.isListening {
-                        voiceService.stopListening()
-                    } else {
-                        voiceService.startListening()
-                    }
+                    if voiceService.isListening { voiceService.stopListening() }
+                    else { voiceService.startListening(contextualStrings: extractContextKeywords(from: messages)) }
                 },
-                color: voiceService.isListening ? .white.opacity(0.2) : .red.opacity(0.3),
+                color: voiceService.isListening ? .white.opacity(0.3) : .white.opacity(0.2),
                 isLarge: false
             )
-            
-            // End Call Button
-            ControlButton(
-                icon: "phone.down.fill",
-                action: endCall,
-                color: .red,
-                isLarge: true
-            )
-            
-            // Keypad Button
-            ControlButton(
-                icon: "circle.grid.3x3.fill",
-                action: {
-                    // Future keypad functionality
-                },
-                color: .white.opacity(0.2),
-                isLarge: false
-            )
+            ControlButton(icon: "phone.down.fill", action: endCall, color: .red, isLarge: true)
         }
         .padding(.bottom, 40)
     }
@@ -273,7 +265,7 @@ struct SimpleChatView: View {
                 
                 // Loading Indicator
                 if isTyping && currentTypingMessage == nil {
-                    LoadingIndicator(text: llmService.isLoading ? "AI is thinking..." : "Connecting to AI...")
+                    LoadingIndicator(text: "Thinking…")
                 }
                 
                 // Error Indicator
@@ -288,11 +280,10 @@ struct SimpleChatView: View {
     // MARK: - Voice Status Bar
     private var voiceStatusBar: some View {
         VStack(spacing: 0) {
-            // Live transcript when speaking (chat mode)
             if voiceService.isListening && !voiceService.transcript.isEmpty {
-                HStack {
+                HStack(spacing: 8) {
                     Image(systemName: "waveform")
-                        .foregroundColor(.blue)
+                        .foregroundColor(.rbcBlue)
                     Text(voiceService.transcript)
                         .font(.subheadline)
                         .foregroundColor(.primary)
@@ -301,151 +292,60 @@ struct SimpleChatView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(Color.blue.opacity(0.08))
+                .background(Color.rbcBlue.opacity(0.08))
             }
-            
-            HStack(spacing: 8) {
-                Image(systemName: voiceService.isListening ? "mic.fill" : (voiceService.isSpeaking ? "speaker.wave.2.fill" : "mic"))
-                    .foregroundColor(voiceService.isListening ? .red : (voiceService.isSpeaking ? .green : .blue))
-                    .scaleEffect((voiceService.isListening || voiceService.isSpeaking) && pulseAnimation ? 1.1 : 1.0)
-                    .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: pulseAnimation)
-                
-                Text(voiceStatusText)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                
-                Spacer()
-                
-                if isTyping {
-                    Button("Reset") {
-                        resetTypingState()
-                    }
-                    .font(.caption)
-                    .foregroundColor(.orange)
+            if voiceService.isListening || voiceService.isSpeaking {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(voiceService.isListening ? .red : .rbcBlue)
+                        .frame(width: 6, height: 6)
+                        .opacity(pulseAnimation ? 0.6 : 1)
+                    Text(voiceService.isListening ? "Listening…" : "Speaking…")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
                 }
-                
-                if voiceService.isListening {
-                    Button("Stop") {
-                        voiceService.stopListening()
-                    }
-                    .font(.caption)
-                    .foregroundColor(.red)
-                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .background(Color(.systemGray6))
             }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-            .background(Color(.systemGray6))
         }
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-    }
-    
-    private var voiceStatusText: String {
-        if voiceService.isListening { return "Listening... Tap Stop when done" }
-        if voiceService.isSpeaking { return "AI is speaking..." }
-        if !voiceService.isAuthorized { return "Enable mic in Settings to talk" }
-        return "Tap mic to talk, or 📞 for full voice call"
     }
     
     // MARK: - Input Section
     private var inputSection: some View {
         VStack(spacing: 0) {
             Divider()
-            
             HStack(spacing: 12) {
-                // Call Button
-                Button(action: startCall) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.green.opacity(0.1))
-                            .frame(width: 44, height: 44)
-                        Image(systemName: "phone.fill")
-                            .font(.title2)
-                            .foregroundColor(.green)
-                    }
-                }
-                .disabled(voiceService.isListening || voiceService.isSpeaking)
-                .scaleEffect(voiceService.isListening || voiceService.isSpeaking ? 0.8 : 1.0)
-                .animation(.easeInOut(duration: 0.2), value: voiceService.isListening)
-                
-                // Voice Toggle Button
                 Button(action: {
-                    voiceService.isVoiceEnabled.toggle()
+                    if voiceService.isListening { voiceService.stopListening() }
+                    else { voiceService.startListening(contextualStrings: extractContextKeywords(from: messages)) }
                 }) {
-                    ZStack {
-                        Circle()
-                            .fill(voiceService.isVoiceEnabled ? Color.blue.opacity(0.1) : Color.gray.opacity(0.1))
-                            .frame(width: 44, height: 44)
-                        Image(systemName: voiceService.isVoiceEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
-                            .font(.title2)
-                            .foregroundColor(voiceService.isVoiceEnabled ? .blue : .gray)
-                    }
-                }
-                
-                // Talk button - tap to speak to the agent (speech-to-text, then AI responds)
-                Button(action: {
-                    if voiceService.isListening {
-                        voiceService.stopListening()
-                    } else {
-                        voiceService.startListening()
-                    }
-                }) {
-                    ZStack {
-                        Circle()
-                            .fill(voiceService.isListening ? Color.red.opacity(0.15) : Color.green.opacity(0.15))
-                            .frame(width: 44, height: 44)
-                        Image(systemName: voiceService.isListening ? "mic.fill" : "mic.fill")
-                            .font(.title2)
-                            .foregroundColor(voiceService.isListening ? .red : .green)
-                    }
+                    Image(systemName: voiceService.isListening ? "mic.fill" : "mic")
+                        .font(.title2)
+                        .foregroundColor(voiceService.isListening ? .red : .rbcBlue)
+                        .frame(width: 44, height: 44)
                 }
                 .disabled(!voiceService.isAuthorized)
                 .opacity(voiceService.isAuthorized ? 1 : 0.5)
-                .scaleEffect(voiceService.isListening ? 1.1 : 1.0)
-                .animation(.easeInOut(duration: 0.2), value: voiceService.isListening)
-                .accessibilityLabel("Talk to agent")
-                .accessibilityHint("Tap to speak your question, tap again to stop")
                 
-                // Text Input (or tap mic to talk)
-                TextField("Type or tap mic to talk...", text: $messageText)
-                    .textFieldStyle(PlainTextFieldStyle())
+                TextField("Message or tap mic to talk", text: $messageText)
+                    .textFieldStyle(.plain)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
                     .background(Color(.systemGray6))
-                    .cornerRadius(20)
+                    .cornerRadius(22)
                     .disabled(isTyping || voiceService.isListening)
                 
-                // Send Button
                 Button(action: sendMessage) {
-                    ZStack {
-                        Circle()
-                            .fill(messageText.isEmpty ? Color.gray.opacity(0.3) : Color.blue)
-                            .frame(width: 44, height: 44)
-                        Image(systemName: "paperplane.fill")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                    }
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 36))
+                        .foregroundStyle(messageText.isEmpty ? Color.gray.opacity(0.4) : LinearGradient(colors: [.rbcBlue, .rbcBlueDark], startPoint: .topLeading, endPoint: .bottomTrailing))
                 }
                 .disabled(messageText.isEmpty || isTyping || voiceService.isListening)
-                .scaleEffect(messageText.isEmpty || isTyping || voiceService.isListening ? 0.8 : 1.0)
-                .animation(.easeInOut(duration: 0.2), value: messageText.isEmpty)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            
-            // Voice Status Indicator
-            if voiceService.isVoiceEnabled {
-                HStack {
-                    Image(systemName: "speaker.wave.2.fill")
-                        .font(.caption)
-                        .foregroundColor(.blue)
-                    Text("Voice responses enabled")
-                        .font(.caption)
-                        .foregroundColor(.blue)
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
-            }
         }
         .background(Color(.systemBackground))
     }
@@ -458,19 +358,18 @@ struct SimpleChatView: View {
             callDuration = 0
         }
         
-        // Start listening after delay
+        // Start listening after delay with conversation context for better speech recognition
+        let contextWords = extractContextKeywords(from: messages)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            voiceService.startListening()
+            voiceService.startListening(contextualStrings: contextWords)
         }
         
-        // Add welcome message
-        let welcomeMessage = SimpleChatMessage(id: UUID().uuidString, content: "Hello! Thanks for calling RBC Assistant. How can I help you today?", isFromUser: false, timestamp: Date())
+        let welcomeMessage = SimpleChatMessage(id: UUID().uuidString, content: "Hi there! I'm your RBC Royal Agent. What can I help you with today?", isFromUser: false, timestamp: Date())
         messages.append(welcomeMessage)
         
-        // Speak welcome only if voice is enabled
         if voiceService.isVoiceEnabled {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                voiceService.speak("Hello! Thanks for calling RBC Assistant. How can I help you today?")
+                voiceService.speak("Hi there! I'm your RBC Royal Agent. What can I help you with today?")
             }
         }
     }
@@ -514,6 +413,20 @@ struct SimpleChatView: View {
     
     private func sendMessage() {
         sendMessageWithVoice()
+    }
+    
+    // MARK: - Context Helpers
+    /// Extract keywords from recent messages to improve speech recognition accuracy
+    private func extractContextKeywords(from messages: [SimpleChatMessage]) -> [String] {
+        let recent = messages.suffix(6)
+        var words: [String] = []
+        for msg in recent {
+            let tokens = msg.content.lowercased()
+                .components(separatedBy: .whitespacesAndNewlines)
+                .filter { $0.count > 3 }
+            words.append(contentsOf: tokens)
+        }
+        return Array(Array(Set(words)).prefix(20))
     }
     
     // MARK: - Debug Helper
@@ -667,15 +580,15 @@ struct MessageBubble: View {
                     .background(
                         RoundedRectangle(cornerRadius: 18)
                             .fill(message.isFromUser ? 
-                                  LinearGradient(colors: [.blue, .blue.opacity(0.8)], startPoint: .topLeading, endPoint: .bottomTrailing) :
-                                  LinearGradient(colors: [Color(.systemGray6), Color(.systemGray5)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                  LinearGradient(colors: [.rbcBlue, .rbcBlueDark], startPoint: .topLeading, endPoint: .bottomTrailing) :
+                                  LinearGradient(colors: [Color(.systemGray5), Color(.systemGray6)], startPoint: .topLeading, endPoint: .bottomTrailing))
                     )
-                    .shadow(color: message.isFromUser ? .blue.opacity(0.2) : .gray.opacity(0.1), radius: 5, x: 0, y: 2)
+                    .shadow(color: message.isFromUser ? .rbcBlue.opacity(0.2) : .gray.opacity(0.08), radius: 4, x: 0, y: 2)
                     .overlay(
                         // Typing cursor
                         isTyping ? 
                         Rectangle()
-                            .fill(Color.blue)
+                            .fill(Color.rbcBlue)
                             .frame(width: 2, height: 20)
                             .opacity(0.8)
                             .offset(x: 8)
@@ -826,7 +739,7 @@ struct LoadingIndicator: View {
         HStack(spacing: 8) {
             ProgressView()
                 .scaleEffect(0.8)
-                .tint(.blue)
+                .tint(.rbcBlue)
             Text(text)
                 .font(.subheadline)
                 .foregroundColor(.secondary)
@@ -907,7 +820,8 @@ class SimpleVoiceService: NSObject, ObservableObject {
         }
     }
     
-    func startListening() {
+    /// Contextual vocabulary improves speech recognition accuracy (banking terms, recent topics)
+    func startListening(contextualStrings: [String]? = nil) {
         guard isAuthorized, !isListening else { return }
         
         do {
@@ -921,6 +835,12 @@ class SimpleVoiceService: NSObject, ObservableObject {
         guard let recognitionRequest = recognitionRequest else { return }
         
         recognitionRequest.shouldReportPartialResults = true
+        // Add context for better voice-to-text accuracy
+        var phrases = ["RBC", "balance", "transfer", "account", "mortgage", "investment", "payment", "bill", "savings", "checking", "credit", "debit"]
+        if let custom = contextualStrings, !custom.isEmpty {
+            phrases.append(contentsOf: custom)
+        }
+        recognitionRequest.contextualStrings = Array(Set(phrases))
         
         let inputNode = audioEngine.inputNode
         let recordingFormat = inputNode.outputFormat(forBus: 0)
@@ -996,25 +916,21 @@ class RealLLMService: ObservableObject {
     private let modelName = "gemini-1.5-flash" // Fast, capable, good for voice
     private let baseURL = "https://generativelanguage.googleapis.com/v1beta/models"
     
-    private static let systemPrompt = """
+    private static let systemPromptBase = """
     You are the RBC Royal Agent - a friendly, knowledgeable AI assistant for Royal Bank of Canada.
     
     IDENTITY: You're like a helpful banker who can also chat about anything. Professional but warm.
     
-    VOICE-FIRST: Users may be listening, not reading. Keep responses:
-    - Concise: 2-5 sentences usually
+    VOICE-FIRST: Users hear your replies. Keep responses:
+    - Concise: 2-4 sentences for quick back-and-forth
     - Clear: Short sentences, minimal jargon
-    - Natural: Conversational tone, like speaking to a friend
+    - Natural: Conversational, like speaking to a friend
     
-    YOU CAN ANSWER:
-    - Any banking question (RBC accounts, transfers, mortgages, investments, credit, etc.)
-    - General knowledge, life advice, how-to questions
-    - Casual chat (greetings, small talk, jokes)
-    - Tech, recipes, travel, productivity - anything helpful
+    YOU CAN ANSWER: Banking, finances, general knowledge, life advice, casual chat - anything helpful.
     
     RULES:
-    - Never make up specific account numbers or balances - use generic "your account" language
-    - For finance: be accurate, suggest consulting professionals for major decisions
+    - Never make up specific account numbers or balances
+    - For finance: be accurate, suggest professionals for major decisions
     - If unsure, say so and offer what you can
     - Stay positive and helpful
     """
@@ -1041,8 +957,8 @@ class RealLLMService: ObservableObject {
     private func callGeminiAPI(input: String, history: [SimpleChatMessage]) async throws -> String {
         var contents: [[String: Any]] = []
         
-        // Add conversation history (last 10 messages for context)
-        let recentHistory = Array(history.suffix(10))
+        // Add conversation history (last 12 messages for strong context awareness)
+        let recentHistory = Array(history.suffix(12))
         for msg in recentHistory {
             let role = msg.isFromUser ? "user" : "model"
             contents.append([
@@ -1057,16 +973,22 @@ class RealLLMService: ObservableObject {
             "parts": [["text": input]]
         ])
         
+        // Build dynamic context: what the conversation is about (helps with "it", "that", follow-ups)
+        let contextHint = buildConversationContext(history: recentHistory, currentInput: input)
+        let fullSystemPrompt = contextHint.isEmpty
+            ? Self.systemPromptBase
+            : Self.systemPromptBase + "\n\nCONVERSATION CONTEXT (use for pronouns like 'it', 'that'):\n" + contextHint
+        
         let requestBody: [String: Any] = [
             "systemInstruction": [
-                "parts": [["text": Self.systemPrompt]]
+                "parts": [["text": fullSystemPrompt]]
             ],
             "contents": contents,
             "generationConfig": [
-                "temperature": 0.8,
-                "topP": 0.95,
-                "topK": 40,
-                "maxOutputTokens": 512
+                "temperature": 0.75,
+                "topP": 0.9,
+                "topK": 32,
+                "maxOutputTokens": 256
             ]
         ]
         
@@ -1077,6 +999,7 @@ class RealLLMService: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 15
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -1104,6 +1027,20 @@ class RealLLMService: ObservableObject {
             return getFallbackResponse(for: input)
         }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    /// Build a short context summary so the LLM understands follow-up questions ("it", "that", etc.)
+    private func buildConversationContext(history: [SimpleChatMessage], currentInput: String) -> String {
+        guard history.count >= 2 else { return "" }
+        let lastExchange = Array(history.suffix(4))
+        var parts: [String] = []
+        for msg in lastExchange {
+            let role = msg.isFromUser ? "User" : "You"
+            let excerpt = String(msg.content.prefix(80))
+            if excerpt.count == 80 { parts.append("\(role): \(excerpt)...") }
+            else { parts.append("\(role): \(excerpt)") }
+        }
+        return parts.joined(separator: "\n")
     }
     
     // MARK: - Fallback Responses (when API fails or is offline)
@@ -1186,12 +1123,7 @@ extension SimpleVoiceService: SFSpeechRecognizerDelegate {
 extension SimpleVoiceService: AVSpeechSynthesizerDelegate {
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         isSpeaking = false
-        // Only auto-restart listening when in call mode (hands-free conversation)
-        if shouldAutoRestartListening {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                self.startListening()
-            }
-        }
+        // Note: View handles auto-restart with context via onSpeakingFinished callback
     }
 }
 
