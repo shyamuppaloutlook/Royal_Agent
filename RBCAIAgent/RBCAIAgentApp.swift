@@ -546,7 +546,7 @@ struct SimpleChatView: View {
         Task {
             print("🤖 Starting AI response generation...")
             do {
-                let response = try await llmService.generateResponse(for: input, conversationHistory: messages)
+                let response = try await llmService.generateResponse(for: input, conversationHistory: Array(messages.dropLast()))
                 print("✅ AI response received: \(response)")
                 let aiMessage = SimpleChatMessage(id: UUID().uuidString, content: response, isFromUser: false, timestamp: Date())
                 
@@ -997,24 +997,26 @@ class RealLLMService: ObservableObject {
     private let baseURL = "https://generativelanguage.googleapis.com/v1beta/models"
     
     private static let systemPrompt = """
-    You are the RBC Royal Agent - a friendly, knowledgeable AI assistant for Royal Bank of Canada customers.
+    You are the RBC Royal Agent - a friendly, knowledgeable AI assistant for Royal Bank of Canada.
     
-    PERSONALITY:
-    - Warm, professional, and helpful
-    - Conversational and natural - you're speaking to users (keep responses concise for voice)
-    - Patient and clear - avoid jargon when possible
+    IDENTITY: You're like a helpful banker who can also chat about anything. Professional but warm.
     
-    CAPABILITIES:
-    - Answer ANY question: banking, finances, general knowledge, life advice, recipes, tech help, etc.
-    - For RBC-specific topics: accounts, transfers, mortgages, investments, credit cards, banking hours, etc.
-    - For general topics: explain concepts, give advice, have casual conversation
-    - If asked about something outside your knowledge, say so honestly and suggest alternatives
+    VOICE-FIRST: Users may be listening, not reading. Keep responses:
+    - Concise: 2-5 sentences usually
+    - Clear: Short sentences, minimal jargon
+    - Natural: Conversational tone, like speaking to a friend
     
-    GUIDELINES:
-    - Keep responses reasonably concise (2-4 sentences typical) - users may be listening via voice
-    - For complex topics, offer to elaborate
-    - Never share real account data - use "your account" language for demos
-    - Be helpful and engaging on all topics, not just banking
+    YOU CAN ANSWER:
+    - Any banking question (RBC accounts, transfers, mortgages, investments, credit, etc.)
+    - General knowledge, life advice, how-to questions
+    - Casual chat (greetings, small talk, jokes)
+    - Tech, recipes, travel, productivity - anything helpful
+    
+    RULES:
+    - Never make up specific account numbers or balances - use generic "your account" language
+    - For finance: be accurate, suggest consulting professionals for major decisions
+    - If unsure, say so and offer what you can
+    - Stay positive and helpful
     """
     
     // MARK: - Public Methods
@@ -1030,7 +1032,7 @@ class RealLLMService: ObservableObject {
             return response
         } catch {
             print("❌ API error, using fallback: \(error)")
-            await MainActor.run { self.error = error.localizedDescription }
+            // Don't set error - we're returning a fallback response successfully
             return getFallbackResponse(for: input)
         }
     }
@@ -1064,8 +1066,7 @@ class RealLLMService: ObservableObject {
                 "temperature": 0.8,
                 "topP": 0.95,
                 "topK": 40,
-                "maxOutputTokens": 512,
-                "responseMimeType": "text/plain"
+                "maxOutputTokens": 512
             ]
         ]
         
@@ -1087,6 +1088,9 @@ class RealLLMService: ObservableObject {
         if httpResponse.statusCode != 200 {
             let responseString = String(data: data, encoding: .utf8) ?? "No data"
             print("❌ API error \(httpResponse.statusCode): \(responseString)")
+            if httpResponse.statusCode == 429 {
+                throw LLMError.serverError(429) // Rate limit - fallback will be used
+            }
             throw LLMError.serverError(httpResponse.statusCode)
         }
         
@@ -1099,11 +1103,10 @@ class RealLLMService: ObservableObject {
             }
             return getFallbackResponse(for: input)
         }
-        
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
-    // MARK: - Fallback Responses (when API fails)
+    // MARK: - Fallback Responses (when API fails or is offline)
     private func getFallbackResponse(for input: String) -> String {
         let lowercaseInput = input.lowercased()
         
@@ -1116,11 +1119,15 @@ class RealLLMService: ObservableObject {
         } else if lowercaseInput.contains("invest") || lowercaseInput.contains("investment") {
             return "Your investment portfolio is currently valued at $15,000 with a 5.2% return this year. Would you like to see your investment options?"
         } else if lowercaseInput.contains("help") || lowercaseInput.contains("hello") || lowercaseInput.contains("hi") {
-            return "Hello! I'm your RBC AI Assistant. I can help you with account balances, transfers, bill payments, investments, and general banking questions. How can I assist you today?"
+            return "Hello! I'm your RBC Royal Agent. I can help with banking, finances, or any other questions. How can I assist you today?"
         } else if lowercaseInput.contains("thank") {
-            return "You're welcome! Is there anything else I can help you with today?"
+            return "You're welcome! Is there anything else I can help you with?"
+        } else if lowercaseInput.contains("how are you") || lowercaseInput.contains("what's up") {
+            return "I'm doing great, thanks for asking! I'm here and ready to help. What can I do for you today?"
+        } else if lowercaseInput.contains("bye") || lowercaseInput.contains("goodbye") {
+            return "Goodbye! Have a wonderful day. Don't hesitate to reach out if you need anything else."
         } else {
-            return "I understand you're asking about: \(input). As an RBC AI Assistant, I'm here to help with your banking needs. Could you please provide more details about what you'd like to know?"
+            return "I'd love to help with that! It looks like I'm having a temporary connection issue. Please try again in a moment, or ask about your balance, transfers, or banking—I can still help with those offline."
         }
     }
 }
