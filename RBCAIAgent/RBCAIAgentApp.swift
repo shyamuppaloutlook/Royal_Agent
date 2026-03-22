@@ -201,19 +201,10 @@ struct SimpleChatView: View {
     // MARK: - Status Section
     private var statusSection: some View {
         VStack(spacing: 12) {
-            HStack(spacing: 8) {
-                Text(voiceService.isListening ? "Listening..." : voiceService.isSpeaking ? "Speaking..." : "On Call")
-                    .font(.title3)
-                    .fontWeight(.medium)
-                    .foregroundColor(.white)
-                
-                // Mute indicator
-                if !voiceService.isListening && !voiceService.isSpeaking {
-                    Image(systemName: "mic.slash.fill")
-                        .font(.caption)
-                        .foregroundColor(.red)
-                }
-            }
+            Text(voiceService.isListening ? "Listening…" : voiceService.isSpeaking ? "Speaking…" : "On Call")
+                .font(.title3)
+                .fontWeight(.medium)
+                .foregroundColor(.white)
             
             // Live Transcription
             if !voiceService.transcript.isEmpty {
@@ -233,19 +224,8 @@ struct SimpleChatView: View {
     
     // MARK: - Controls Section
     private var controlsSection: some View {
-        HStack(spacing: 50) {
-            ControlButton(
-                icon: voiceService.isListening ? "mic.fill" : "mic.slash.fill",
-                action: {
-                    if voiceService.isListening { voiceService.stopListening() }
-                    else { voiceService.startListening(contextualStrings: extractContextKeywords(from: messages)) }
-                },
-                color: voiceService.isListening ? .white.opacity(0.3) : .white.opacity(0.2),
-                isLarge: false
-            )
-            ControlButton(icon: "phone.down.fill", action: endCall, color: .red, isLarge: true)
-        }
-        .padding(.bottom, 40)
+        ControlButton(icon: "phone.down.fill", action: endCall, color: .red, isLarge: true)
+            .padding(.bottom, 40)
     }
     
     // MARK: - Messages Section
@@ -340,7 +320,7 @@ struct SimpleChatView: View {
                 Button(action: sendMessage) {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 36))
-                        .foregroundStyle(messageText.isEmpty ? Color.gray.opacity(0.4) : LinearGradient(colors: [.rbcBlue, .rbcBlueDark], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .foregroundStyle(messageText.isEmpty ? AnyShapeStyle(Color.gray.opacity(0.4)) : AnyShapeStyle(LinearGradient(colors: [.rbcBlue, .rbcBlueDark], startPoint: .topLeading, endPoint: .bottomTrailing)))
                 }
                 .disabled(messageText.isEmpty || isTyping || voiceService.isListening)
             }
@@ -364,12 +344,12 @@ struct SimpleChatView: View {
             voiceService.startListening(contextualStrings: contextWords)
         }
         
-        let welcomeMessage = SimpleChatMessage(id: UUID().uuidString, content: "Hi there! I'm your RBC Royal Agent. What can I help you with today?", isFromUser: false, timestamp: Date())
+        let welcomeMessage = SimpleChatMessage(id: UUID().uuidString, content: "Hello.", isFromUser: false, timestamp: Date())
         messages.append(welcomeMessage)
         
         if voiceService.isVoiceEnabled {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                voiceService.speak("Hi there! I'm your RBC Royal Agent. What can I help you with today?")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                voiceService.speak("Hello. How can I help?")
             }
         }
     }
@@ -795,6 +775,7 @@ class SimpleVoiceService: NSObject, ObservableObject {
     private let audioEngine = AVAudioEngine()
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
+    private var silenceTimer: Timer?
     
     // MARK: - Initialization
     override init() {
@@ -860,13 +841,16 @@ class SimpleVoiceService: NSObject, ObservableObject {
         recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { result, error in
             DispatchQueue.main.async {
                 if let result = result {
-                    self.transcript = result.bestTranscription.formattedString
+                    let text = result.bestTranscription.formattedString
+                    self.transcript = text
                     if result.isFinal {
-                        self.finalTranscript = result.bestTranscription.formattedString
+                        self.finalTranscript = text
+                        self.stopListening()
+                        return
                     }
+                    self.resetSilenceTimer()
                 }
-                
-                if error != nil || result?.isFinal == true {
+                if error != nil {
                     self.stopListening()
                 }
             }
@@ -874,16 +858,30 @@ class SimpleVoiceService: NSObject, ObservableObject {
     }
     
     func stopListening() {
+        silenceTimer?.invalidate()
+        silenceTimer = nil
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
-        
         recognitionRequest?.endAudio()
         recognitionRequest = nil
         recognitionTask?.cancel()
         recognitionTask = nil
-        
+        if !transcript.isEmpty {
+            finalTranscript = transcript
+        }
         isListening = false
         transcript = ""
+    }
+    
+    private func resetSilenceTimer() {
+        silenceTimer?.invalidate()
+        silenceTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self = self, self.isListening, !self.transcript.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                self.finalTranscript = self.transcript
+                self.stopListening()
+            }
+        }
     }
     
     func speak(_ text: String) {
@@ -917,21 +915,17 @@ class RealLLMService: ObservableObject {
     private let baseURL = "https://generativelanguage.googleapis.com/v1beta/models"
     
     private static let systemPromptBase = """
-    You are the RBC Royal Agent - a friendly, knowledgeable AI assistant for Royal Bank of Canada.
+    You are the RBC Royal Agent - a friendly AI assistant for Royal Bank of Canada.
     
-    IDENTITY: You're like a helpful banker who can also chat about anything. Professional but warm.
+    LISTENING: Pay close attention to every word the user says. Their message is exactly what they spoke - use it as their full question or request. Don't paraphrase or assume; respond to what they actually said.
     
-    VOICE-FIRST: Users hear your replies. Keep responses:
-    - Concise: 2-4 sentences for quick back-and-forth
-    - Clear: Short sentences, minimal jargon
-    - Natural: Conversational, like speaking to a friend
+    VOICE-FIRST: Users hear your replies. Keep responses concise (2-4 sentences), clear, and natural - like speaking to a friend.
     
     YOU CAN ANSWER: Banking, finances, general knowledge, life advice, casual chat - anything helpful.
     
     RULES:
     - Never make up specific account numbers or balances
     - For finance: be accurate, suggest professionals for major decisions
-    - If unsure, say so and offer what you can
     - Stay positive and helpful
     """
     
