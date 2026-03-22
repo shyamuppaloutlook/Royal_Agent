@@ -49,6 +49,7 @@ struct SimpleChatView: View {
             .background(Color(.systemBackground))
             .onAppear {
                 voiceService.requestPermissions()
+                pulseAnimation = true
             }
             .onChange(of: voiceService.transcript) { newValue in
                 if !newValue.isEmpty {
@@ -286,36 +287,63 @@ struct SimpleChatView: View {
     
     // MARK: - Voice Status Bar
     private var voiceStatusBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: voiceService.isListening ? "mic.fill" : "speaker.wave.2.fill")
-                .foregroundColor(voiceService.isListening ? .red : .green)
-                .scaleEffect(pulseAnimation ? 1.1 : 1.0)
-                .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: pulseAnimation)
-            
-            Text(voiceService.isListening ? "Listening..." : "Speaking...")
-                .font(.caption)
-                .foregroundColor(.secondary)
-            
-            Spacer()
-            
-            if isTyping {
-                Button("Reset") {
-                    resetTypingState()
+        VStack(spacing: 0) {
+            // Live transcript when speaking (chat mode)
+            if voiceService.isListening && !voiceService.transcript.isEmpty {
+                HStack {
+                    Image(systemName: "waveform")
+                        .foregroundColor(.blue)
+                    Text(voiceService.transcript)
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                    Spacer()
                 }
-                .font(.caption)
-                .foregroundColor(.orange)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color.blue.opacity(0.08))
             }
             
-            Button("Stop") {
-                voiceService.stopListening()
+            HStack(spacing: 8) {
+                Image(systemName: voiceService.isListening ? "mic.fill" : (voiceService.isSpeaking ? "speaker.wave.2.fill" : "mic"))
+                    .foregroundColor(voiceService.isListening ? .red : (voiceService.isSpeaking ? .green : .blue))
+                    .scaleEffect((voiceService.isListening || voiceService.isSpeaking) && pulseAnimation ? 1.1 : 1.0)
+                    .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: pulseAnimation)
+                
+                Text(voiceStatusText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                if isTyping {
+                    Button("Reset") {
+                        resetTypingState()
+                    }
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                }
+                
+                if voiceService.isListening {
+                    Button("Stop") {
+                        voiceService.stopListening()
+                    }
+                    .font(.caption)
+                    .foregroundColor(.red)
+                }
             }
-            .font(.caption)
-            .foregroundColor(.red)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+            .background(Color(.systemGray6))
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-        .background(Color(.systemGray6))
         .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+    
+    private var voiceStatusText: String {
+        if voiceService.isListening { return "Listening... Tap Stop when done" }
+        if voiceService.isSpeaking { return "AI is speaking..." }
+        if !voiceService.isAuthorized { return "Enable mic in Settings to talk" }
+        return "Tap mic to talk, or 📞 for full voice call"
     }
     
     // MARK: - Input Section
@@ -353,7 +381,7 @@ struct SimpleChatView: View {
                     }
                 }
                 
-                // Voice Input Button
+                // Talk button - tap to speak to the agent (speech-to-text, then AI responds)
                 Button(action: {
                     if voiceService.isListening {
                         voiceService.stopListening()
@@ -363,18 +391,22 @@ struct SimpleChatView: View {
                 }) {
                     ZStack {
                         Circle()
-                            .fill(voiceService.isListening ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
+                            .fill(voiceService.isListening ? Color.red.opacity(0.15) : Color.green.opacity(0.15))
                             .frame(width: 44, height: 44)
-                        Image(systemName: voiceService.isListening ? "mic.fill" : "mic")
+                        Image(systemName: voiceService.isListening ? "mic.fill" : "mic.fill")
                             .font(.title2)
                             .foregroundColor(voiceService.isListening ? .red : .green)
                     }
                 }
+                .disabled(!voiceService.isAuthorized)
+                .opacity(voiceService.isAuthorized ? 1 : 0.5)
                 .scaleEffect(voiceService.isListening ? 1.1 : 1.0)
                 .animation(.easeInOut(duration: 0.2), value: voiceService.isListening)
+                .accessibilityLabel("Talk to agent")
+                .accessibilityHint("Tap to speak your question, tap again to stop")
                 
-                // Text Input
-                TextField("Ask about your finances...", text: $messageText)
+                // Text Input (or tap mic to talk)
+                TextField("Type or tap mic to talk...", text: $messageText)
                     .textFieldStyle(PlainTextFieldStyle())
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
@@ -420,6 +452,7 @@ struct SimpleChatView: View {
     
     // MARK: - Call Functions
     private func startCall() {
+        voiceService.shouldAutoRestartListening = true
         withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
             showCallInterface = true
             callDuration = 0
@@ -443,6 +476,7 @@ struct SimpleChatView: View {
     }
     
     private func endCall() {
+        voiceService.shouldAutoRestartListening = false
         voiceService.stopListening()
         stopCallTimer()
         
@@ -512,7 +546,7 @@ struct SimpleChatView: View {
         Task {
             print("🤖 Starting AI response generation...")
             do {
-                let response = try await llmService.generateResponse(for: input)
+                let response = try await llmService.generateResponse(for: input, conversationHistory: messages)
                 print("✅ AI response received: \(response)")
                 let aiMessage = SimpleChatMessage(id: UUID().uuidString, content: response, isFromUser: false, timestamp: Date())
                 
@@ -839,6 +873,8 @@ class SimpleVoiceService: NSObject, ObservableObject {
     @Published var finalTranscript = ""
     @Published var isAuthorized = false
     @Published var isVoiceEnabled = true
+    /// When true, automatically start listening after AI finishes speaking (used in call mode)
+    var shouldAutoRestartListening = false
     
     // MARK: - Private Properties
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
@@ -956,95 +992,118 @@ class RealLLMService: ObservableObject {
     @Published var error: String?
     
     // MARK: - Private Properties
-    private let apiKey = "AIzaSyAmlWf2ZfoB1yWtBd6Nqud2MeV0RLFXGcU" // Gemini API key
-    private let baseURL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+    private let apiKey = "AIzaSyAmlWf2ZfoB1yWtBd6Nqud2MeV0RLFXGcU" // Gemini API key - move to env in production
+    private let modelName = "gemini-1.5-flash" // Fast, capable, good for voice
+    private let baseURL = "https://generativelanguage.googleapis.com/v1beta/models"
+    
+    private static let systemPrompt = """
+    You are the RBC Royal Agent - a friendly, knowledgeable AI assistant for Royal Bank of Canada customers.
+    
+    PERSONALITY:
+    - Warm, professional, and helpful
+    - Conversational and natural - you're speaking to users (keep responses concise for voice)
+    - Patient and clear - avoid jargon when possible
+    
+    CAPABILITIES:
+    - Answer ANY question: banking, finances, general knowledge, life advice, recipes, tech help, etc.
+    - For RBC-specific topics: accounts, transfers, mortgages, investments, credit cards, banking hours, etc.
+    - For general topics: explain concepts, give advice, have casual conversation
+    - If asked about something outside your knowledge, say so honestly and suggest alternatives
+    
+    GUIDELINES:
+    - Keep responses reasonably concise (2-4 sentences typical) - users may be listening via voice
+    - For complex topics, offer to elaborate
+    - Never share real account data - use "your account" language for demos
+    - Be helpful and engaging on all topics, not just banking
+    """
     
     // MARK: - Public Methods
-    func generateResponse(for input: String) async throws -> String {
+    func generateResponse(for input: String, conversationHistory: [SimpleChatMessage] = []) async throws -> String {
         print("🔍 Generating response for: \(input)")
         isLoading = true
         error = nil
         defer { isLoading = false }
         
-        // Check if API key is configured
-        if apiKey.contains("demo") || apiKey.contains("YOUR_API_KEY_HERE") || apiKey.isEmpty {
-            print("📝 Using fallback response")
+        do {
+            let response = try await callGeminiAPI(input: input, history: conversationHistory)
+            print("✅ Generated response: \(response.prefix(100))...")
+            return response
+        } catch {
+            print("❌ API error, using fallback: \(error)")
+            await MainActor.run { self.error = error.localizedDescription }
             return getFallbackResponse(for: input)
         }
+    }
+    
+    // MARK: - Gemini API
+    private func callGeminiAPI(input: String, history: [SimpleChatMessage]) async throws -> String {
+        var contents: [[String: Any]] = []
         
-        print("🌐 Using Gemini API")
-        // Create system prompt
-        let systemPrompt = """
-        You are a helpful RBC (Royal Bank of Canada) AI assistant. You provide professional, accurate, and helpful information about banking, finances, and RBC services. Always be polite, professional, and helpful. If you don't know specific account details, explain that you'd need to access their actual account information. Provide general guidance and suggest they contact RBC directly for specific account queries.
-        """
+        // Add conversation history (last 10 messages for context)
+        let recentHistory = Array(history.suffix(10))
+        for msg in recentHistory {
+            let role = msg.isFromUser ? "user" : "model"
+            contents.append([
+                "role": role,
+                "parts": [["text": msg.content]]
+            ])
+        }
         
-        let fullPrompt = "\(systemPrompt)\n\nUser: \(input)"
-        print("📤 Full prompt: \(fullPrompt)")
+        // Add current user message
+        contents.append([
+            "role": "user",
+            "parts": [["text": input]]
+        ])
         
         let requestBody: [String: Any] = [
-            "contents": [
-                [
-                    "parts": [
-                        ["text": fullPrompt]
-                    ]
-                ]
+            "systemInstruction": [
+                "parts": [["text": Self.systemPrompt]]
             ],
+            "contents": contents,
             "generationConfig": [
-                "temperature": 0.7,
-                "maxOutputTokens": 150
+                "temperature": 0.8,
+                "topP": 0.95,
+                "topK": 40,
+                "maxOutputTokens": 512,
+                "responseMimeType": "text/plain"
             ]
         ]
         
-        guard let url = URL(string: "\(baseURL)?key=\(apiKey)") else {
-            print("❌ Invalid URL")
+        guard let url = URL(string: "\(baseURL)/\(modelName):generateContent?key=\(apiKey)") else {
             throw LLMError.invalidURL
         }
-        
-        print("🌍 Request URL: \(url)")
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
-        do {
-            request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-            print("📦 Request body created")
-        } catch {
-            print("❌ Encoding error: \(error)")
-            throw LLMError.encodingError
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw LLMError.unknownError(NSError(domain: "LLM", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"]))
         }
         
-        do {
-            print("🚀 Making API request...")
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            if let httpResponse = response as? HTTPURLResponse {
-                print("📊 Response status: \(httpResponse.statusCode)")
-                if httpResponse.statusCode != 200 {
-                    let responseString = String(data: data, encoding: .utf8) ?? "No data"
-                    print("❌ Server error response: \(responseString)")
-                    throw LLMError.serverError(httpResponse.statusCode)
-                }
-            }
-            
-            print("📄 Response data: \(String(data: data, encoding: .utf8) ?? "No data")")
-            let geminiResponse = try JSONDecoder().decode(GeminiResponse.self, from: data)
-            let result = geminiResponse.candidates.first?.content.parts.first?.text ?? "I'm sorry, I couldn't generate a response."
-            print("✅ Generated response: \(result)")
-            return result
-        } catch {
-            print("❌ API error: \(error)")
-            if let urlError = error as? URLError, urlError.code == .notConnectedToInternet {
-                throw LLMError.noInternet
-            } else if let httpResponse = error as? HTTPURLResponse {
-                throw LLMError.serverError(httpResponse.statusCode)
-            } else {
-                throw LLMError.unknownError(error)
-            }
+        if httpResponse.statusCode != 200 {
+            let responseString = String(data: data, encoding: .utf8) ?? "No data"
+            print("❌ API error \(httpResponse.statusCode): \(responseString)")
+            throw LLMError.serverError(httpResponse.statusCode)
         }
+        
+        let geminiResponse = try JSONDecoder().decode(GeminiResponse.self, from: data)
+        guard let candidate = geminiResponse.candidates?.first,
+              let text = candidate.content.parts.first?.text,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            if let blockReason = geminiResponse.candidates?.first?.finishReason {
+                print("⚠️ Response blocked: \(blockReason)")
+            }
+            return getFallbackResponse(for: input)
+        }
+        
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
-    // MARK: - Fallback Responses
+    // MARK: - Fallback Responses (when API fails)
     private func getFallbackResponse(for input: String) -> String {
         let lowercaseInput = input.lowercased()
         
@@ -1068,11 +1127,12 @@ class RealLLMService: ObservableObject {
 
 // MARK: - AI Response Models
 struct GeminiResponse: Codable {
-    let candidates: [Candidate]
+    let candidates: [Candidate]?
 }
 
 struct Candidate: Codable {
     let content: Content
+    let finishReason: String?
 }
 
 struct Content: Codable {
@@ -1119,9 +1179,11 @@ extension SimpleVoiceService: SFSpeechRecognizerDelegate {
 extension SimpleVoiceService: AVSpeechSynthesizerDelegate {
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         isSpeaking = false
-        // Automatically restart listening after speaking in call mode
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.startListening()
+        // Only auto-restart listening when in call mode (hands-free conversation)
+        if shouldAutoRestartListening {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.startListening()
+            }
         }
     }
 }
