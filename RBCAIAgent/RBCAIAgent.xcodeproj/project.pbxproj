@@ -11,6 +11,7 @@
 		AA000003 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000004 /* ContentView.swift */; };
 		AA000005 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA000006 /* Assets.xcassets */; };
 		AA000007 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA000008 /* Preview Assets.xcassets */; };
+		AA000200 /* GeminiLiveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000201 /* GeminiLiveService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -58,6 +59,7 @@
 		AA000084 /* AdditionalMockData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdditionalMockData.swift; sourceTree = "<group>"; };
 		AA000086 /* DataModelTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataModelTest.swift; sourceTree = "<group>"; };
 		AA000087 /* RBCAIAgent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RBCAIAgent.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA000201 /* GeminiLiveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiLiveService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -157,6 +159,7 @@
 				AA000076 /* RBCIntegrationService.swift */,
 				AA000078 /* RBCKnowledgeBase.swift */,
 				AA000080 /* SecurityManager.swift */,
+				AA000201 /* GeminiLiveService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -241,6 +244,7 @@
 			files = (
 				AA000001 /* RBCAIAgentApp.swift in Sources */,
 				AA000003 /* ContentView.swift in Sources */,
+				AA000200 /* GeminiLiveService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
