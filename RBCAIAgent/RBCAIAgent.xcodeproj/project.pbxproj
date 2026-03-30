@@ -19,45 +19,6 @@
 		AA000004 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		AA000006 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA000008 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
-		AA000010 /* RBCModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RBCModels.swift; sourceTree = "<group>"; };
-		AA000012 /* RBCDataManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RBCDataManager.swift; sourceTree = "<group>"; };
-		AA000014 /* RBCAIAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RBCAIAgent.swift; sourceTree = "<group>"; };
-		AA000016 /* VoiceCallService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCallService.swift; sourceTree = "<group>"; };
-		AA000018 /* VoiceChatService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceChatService.swift; sourceTree = "<group>"; };
-		AA000020 /* CallSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallSummaryView.swift; sourceTree = "<group>"; };
-		AA000022 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
-		AA000024 /* Presentation/Views/ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Presentation/Views/ChatView.swift; sourceTree = "<group>"; };
-		AA000026 /* AccountsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountsView.swift; sourceTree = "<group>"; };
-		AA000028 /* TransactionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionsView.swift; sourceTree = "<group>"; };
-		AA000030 /* InsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsView.swift; sourceTree = "<group>"; };
-		AA000032 /* ActiveCallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveCallView.swift; sourceTree = "<group>"; };
-		AA000034 /* CallInitiationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallInitiationView.swift; sourceTree = "<group>"; };
-		AA000036 /* VoiceCallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCallView.swift; sourceTree = "<group>"; };
-		AA000038 /* VoiceChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceChatView.swift; sourceTree = "<group>"; };
-		AA000040 /* AnalyticsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalyticsService.swift; sourceTree = "<group>"; };
-		AA000042 /* APIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIService.swift; sourceTree = "<group>"; };
-		AA000044 /* BiometricService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricService.swift; sourceTree = "<group>"; };
-		AA000046 /* CloudSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSyncService.swift; sourceTree = "<group>"; };
-		AA000048 /* ComplianceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComplianceService.swift; sourceTree = "<group>"; };
-		AA000050 /* CryptoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoService.swift; sourceTree = "<group>"; };
-		AA000052 /* EnhancedAIAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnhancedAIAgent.swift; sourceTree = "<group>"; };
-		AA000054 /* ErrorHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorHandler.swift; sourceTree = "<group>"; };
-		AA000056 /* FinancialAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinancialAnalyzer.swift; sourceTree = "<group>"; };
-		AA000058 /* InsightEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightEngine.swift; sourceTree = "<group>"; };
-		AA000060 /* LoggingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoggingService.swift; sourceTree = "<group>"; };
-		AA000062 /* MarketDataProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketDataProvider.swift; sourceTree = "<group>"; };
-		AA000064 /* MLService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLService.swift; sourceTree = "<group>"; };
-		AA000066 /* NetworkService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkService.swift; sourceTree = "<group>"; };
-		AA000068 /* NLPProcessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NLPProcessor.swift; sourceTree = "<group>"; };
-		AA000070 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
-		AA000072 /* PatternRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatternRecognizer.swift; sourceTree = "<group>"; };
-		AA000074 /* RBCDataTrainingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RBCDataTrainingService.swift; sourceTree = "<group>"; };
-		AA000076 /* RBCIntegrationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RBCIntegrationService.swift; sourceTree = "<group>"; };
-		AA000078 /* RBCKnowledgeBase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RBCKnowledgeBase.swift; sourceTree = "<group>"; };
-		AA000080 /* SecurityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityManager.swift; sourceTree = "<group>"; };
-		AA000082 /* AdditionalModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdditionalModels.swift; sourceTree = "<group>"; };
-		AA000084 /* AdditionalMockData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdditionalMockData.swift; sourceTree = "<group>"; };
-		AA000086 /* DataModelTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataModelTest.swift; sourceTree = "<group>"; };
 		AA000087 /* RBCAIAgent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RBCAIAgent.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA000201 /* GeminiLiveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeminiLiveService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -86,8 +47,6 @@
 			children = (
 				AA000002 /* RBCAIAgentApp.swift */,
 				AA000004 /* ContentView.swift */,
-				AA000092 /* Models */,
-				AA000093 /* Views */,
 				AA000094 /* Services */,
 				AA000006 /* Assets.xcassets */,
 				AA000095 /* Preview Content */,
@@ -103,62 +62,9 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		AA000092 /* Models */ = {
-			isa = PBXGroup;
-			children = (
-				AA000010 /* RBCModels.swift */,
-				AA000012 /* RBCDataManager.swift */,
-				AA000082 /* AdditionalModels.swift */,
-				AA000084 /* AdditionalMockData.swift */,
-				AA000086 /* DataModelTest.swift */,
-			);
-			path = Models;
-			sourceTree = "<group>";
-		};
-		AA000093 /* Views */ = {
-			isa = PBXGroup;
-			children = (
-				AA000024 /* Presentation/Views/ChatView.swift */,
-				AA000022 /* DashboardView.swift */,
-				AA000026 /* AccountsView.swift */,
-				AA000028 /* TransactionsView.swift */,
-				AA000030 /* InsightsView.swift */,
-				AA000032 /* ActiveCallView.swift */,
-				AA000034 /* CallInitiationView.swift */,
-				AA000036 /* VoiceCallView.swift */,
-				AA000038 /* VoiceChatView.swift */,
-				AA000020 /* CallSummaryView.swift */,
-			);
-			path = Views;
-			sourceTree = "<group>";
-		};
 		AA000094 /* Services */ = {
 			isa = PBXGroup;
 			children = (
-				AA000014 /* RBCAIAgent.swift */,
-				AA000016 /* VoiceCallService.swift */,
-				AA000018 /* VoiceChatService.swift */,
-				AA000040 /* AnalyticsService.swift */,
-				AA000042 /* APIService.swift */,
-				AA000044 /* BiometricService.swift */,
-				AA000046 /* CloudSyncService.swift */,
-				AA000048 /* ComplianceService.swift */,
-				AA000050 /* CryptoService.swift */,
-				AA000052 /* EnhancedAIAgent.swift */,
-				AA000054 /* ErrorHandler.swift */,
-				AA000056 /* FinancialAnalyzer.swift */,
-				AA000058 /* InsightEngine.swift */,
-				AA000060 /* LoggingService.swift */,
-				AA000062 /* MarketDataProvider.swift */,
-				AA000064 /* MLService.swift */,
-				AA000066 /* NetworkService.swift */,
-				AA000068 /* NLPProcessor.swift */,
-				AA000070 /* NotificationService.swift */,
-				AA000072 /* PatternRecognizer.swift */,
-				AA000074 /* RBCDataTrainingService.swift */,
-				AA000076 /* RBCIntegrationService.swift */,
-				AA000078 /* RBCKnowledgeBase.swift */,
-				AA000080 /* SecurityManager.swift */,
 				AA000201 /* GeminiLiveService.swift */,
 			);
 			path = Services;

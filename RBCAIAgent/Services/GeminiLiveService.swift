@@ -63,7 +63,7 @@ class GeminiLiveService: NSObject, ObservableObject {
     // MARK: - Init
 
     init(apiKey: String,
-         modelName: String = "gemini-2.0-flash-live-001",
+         modelName: String = "gemini-2.5-flash-native-audio-latest",
          systemPrompt: String) {
         self.apiKey = apiKey
         self.modelName = modelName
@@ -78,8 +78,11 @@ class GeminiLiveService: NSObject, ObservableObject {
     // MARK: - Connection Lifecycle
 
     func connect() {
-        guard connectionState == .disconnected || connectionState == .error("") == false else {
-            if case .disconnected = connectionState {} else if case .error = connectionState {} else { return }
+        switch connectionState {
+        case .disconnected, .error:
+            break
+        default:
+            return
         }
 
         connectionState = .connecting
