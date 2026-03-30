@@ -26,6 +26,23 @@ struct SimpleChatView: View {
     @State private var isTyping: Bool = false
     @StateObject private var voiceService = SimpleVoiceService()
     @StateObject private var llmService = RealLLMService()
+    @StateObject private var liveService = GeminiLiveService(
+        apiKey: "AIzaSyCsIemIOnJZJUyH5zIi981CskbtlGBxE6o",
+        systemPrompt: """
+        You are the RBC Royal Agent — a friendly AI assistant for Royal Bank of Canada on a live voice call.
+
+        VOICE RULES:
+        - The user is SPEAKING to you and HEARING your reply — keep it conversational and natural.
+        - Be concise: 2-3 sentences max. No bullet points, no markdown, no lists.
+        - Answer directly — don't repeat the question back or use filler phrases.
+        - Sound warm and confident, like a knowledgeable friend.
+
+        IMPORTANT:
+        - Never fabricate account numbers or balances.
+        - For major financial decisions, suggest speaking with an RBC advisor.
+        - If unsure, say so honestly.
+        """
+    )
     @State private var showCallInterface: Bool = false
     @State private var pulseAnimation: Bool = false
     @State private var callDuration: TimeInterval = 0
@@ -60,33 +77,68 @@ struct SimpleChatView: View {
                         Image(systemName: "phone.fill")
                             .foregroundColor(.white)
                     }
-                    .disabled(voiceService.isListening || voiceService.isSpeaking)
+                    .disabled(showCallInterface)
                 }
             }
             .background(Color(.systemGroupedBackground))
             .onAppear {
                 voiceService.requestPermissions()
+                voiceService.refreshAuthorizationStatus()
                 pulseAnimation = true
+
+                Task {
+                    await llmService.testLLMConnection()
+                }
+
+                // Live service: when a full turn completes, add messages to chat history
+                liveService.onTurnComplete = { [self] userText, modelText in
+                    if !userText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        let userMsg = SimpleChatMessage(
+                            id: UUID().uuidString,
+                            content: userText.trimmingCharacters(in: .whitespacesAndNewlines),
+                            isFromUser: true,
+                            timestamp: Date()
+                        )
+                        messages.append(userMsg)
+                    }
+                    if !modelText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        let modelMsg = SimpleChatMessage(
+                            id: UUID().uuidString,
+                            content: modelText.trimmingCharacters(in: .whitespacesAndNewlines),
+                            isFromUser: false,
+                            timestamp: Date()
+                        )
+                        messages.append(modelMsg)
+                    }
+                }
             }
+            // Live service: start audio capture once WebSocket session is ready
+            .onChange(of: liveService.connectionState) { newState in
+                if case .ready = newState {
+                    liveService.startCapture()
+                }
+            }
+            // Text chat: voice input for non-call mode
             .onChange(of: voiceService.transcript) { newValue in
+                guard !showCallInterface else { return }
                 if !newValue.isEmpty {
                     messageText = newValue
                 }
+                llmService.scheduleVoicePrefetch(
+                    transcript: newValue,
+                    conversationHistory: messages,
+                    latestTranscript: { voiceService.transcript }
+                )
             }
             .onChange(of: voiceService.finalTranscript) { newValue in
+                guard !showCallInterface else { return }
                 if !newValue.isEmpty {
                     messageText = newValue
                     sendMessage()
                     voiceService.clearTranscript()
                 }
             }
-            .onChange(of: voiceService.isSpeaking) { isSpeaking in
-                if !isSpeaking && voiceService.shouldAutoRestartListening && showCallInterface {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        voiceService.startListening(contextualStrings: extractContextKeywords(from: messages))
-                    }
-                }
-            }
+        
         }
     }
     
@@ -160,13 +212,14 @@ struct SimpleChatView: View {
     private var mainCallCircle: some View {
         VStack(spacing: 30) {
             ZStack {
-                // Glow Effect
-                if voiceService.isListening {
+                // Glow: green when listening, blue when model is speaking
+                if case .ready = liveService.connectionState {
                     Circle()
-                        .fill(Color.green.opacity(0.3))
+                        .fill((liveService.isModelSpeaking ? Color.rbcBlue : Color.green).opacity(0.3))
                         .frame(width: 250, height: 250)
                         .scaleEffect(pulseAnimation ? 1.1 : 1.0)
-                        .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: pulseAnimation)
+                        .animation(.easeInOut(duration: liveService.isModelSpeaking ? 0.6 : 1.2)
+                            .repeatForever(autoreverses: true), value: pulseAnimation)
                 }
                 
                 // Main Circle
@@ -201,14 +254,14 @@ struct SimpleChatView: View {
     // MARK: - Status Section
     private var statusSection: some View {
         VStack(spacing: 12) {
-            Text(voiceService.isListening ? "Listening…" : voiceService.isSpeaking ? "Speaking…" : "On Call")
+            Text(liveServiceStatusText)
                 .font(.title3)
                 .fontWeight(.medium)
                 .foregroundColor(.white)
-            
-            // Live Transcription
-            if !voiceService.transcript.isEmpty {
-                Text(voiceService.transcript)
+
+            // Live user transcription (what the user is saying right now)
+            if !liveService.userTranscript.isEmpty {
+                Text(liveService.userTranscript)
                     .font(.body)
                     .foregroundColor(.white)
                     .padding(.horizontal, 20)
@@ -217,8 +270,43 @@ struct SimpleChatView: View {
                     .cornerRadius(20)
                     .lineLimit(3)
                     .multilineTextAlignment(.center)
-                    .animation(.easeInOut(duration: 0.3), value: voiceService.transcript)
+                    .animation(.easeInOut(duration: 0.3), value: liveService.userTranscript)
             }
+
+            // Live model response transcription
+            if !liveService.modelTranscript.isEmpty {
+                Text(liveService.modelTranscript)
+                    .font(.callout)
+                    .foregroundColor(.white.opacity(0.85))
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
+                    .background(Color.rbcBlue.opacity(0.4))
+                    .cornerRadius(16)
+                    .lineLimit(4)
+                    .multilineTextAlignment(.center)
+                    .animation(.easeInOut(duration: 0.2), value: liveService.modelTranscript)
+            }
+
+            // Error from live service
+            if let liveError = liveService.error {
+                Text(liveError)
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .padding(.horizontal, 16)
+            }
+        }
+    }
+
+    private var liveServiceStatusText: String {
+        switch liveService.connectionState {
+        case .disconnected: return "Disconnected"
+        case .connecting: return "Connecting…"
+        case .settingUp: return "Setting up…"
+        case .ready:
+            if liveService.isModelSpeaking { return "Speaking…" }
+            if !liveService.userTranscript.isEmpty { return "Listening…" }
+            return "Listening…"
+        case .error: return "Connection Error"
         }
     }
     
@@ -274,13 +362,13 @@ struct SimpleChatView: View {
                 .padding(.vertical, 10)
                 .background(Color.rbcBlue.opacity(0.08))
             }
-            if voiceService.isListening || voiceService.isSpeaking {
+            if voiceService.isListening {
                 HStack(spacing: 6) {
                     Circle()
-                        .fill(voiceService.isListening ? .red : .rbcBlue)
+                        .fill(Color.red)
                         .frame(width: 6, height: 6)
                         .opacity(pulseAnimation ? 0.6 : 1)
-                    Text(voiceService.isListening ? "Listening…" : "Speaking…")
+                    Text("Listening…")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     Spacer()
@@ -298,15 +386,20 @@ struct SimpleChatView: View {
             Divider()
             HStack(spacing: 12) {
                 Button(action: {
-                    if voiceService.isListening { voiceService.stopListening() }
-                    else { voiceService.startListening(contextualStrings: extractContextKeywords(from: messages)) }
+                    if !voiceService.isAuthorized {
+                        voiceService.requestPermissions()
+                        voiceService.refreshAuthorizationStatus()
+                    } else if voiceService.isListening {
+                        voiceService.stopListening()
+                    } else {
+                        voiceService.startListening(contextualStrings: extractContextKeywords(from: messages))
+                    }
                 }) {
                     Image(systemName: voiceService.isListening ? "mic.fill" : "mic")
                         .font(.title2)
                         .foregroundColor(voiceService.isListening ? .red : .rbcBlue)
                         .frame(width: 44, height: 44)
                 }
-                .disabled(!voiceService.isAuthorized)
                 .opacity(voiceService.isAuthorized ? 1 : 0.5)
                 
                 TextField("Message or tap mic to talk", text: $messageText)
@@ -332,40 +425,31 @@ struct SimpleChatView: View {
     
     // MARK: - Call Functions
     private func startCall() {
-        voiceService.shouldAutoRestartListening = true
         withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
             showCallInterface = true
             callDuration = 0
         }
-        
-        // Start listening after delay with conversation context for better speech recognition
-        let contextWords = extractContextKeywords(from: messages)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            voiceService.startListening(contextualStrings: contextWords)
-        }
-        
-        let welcomeMessage = SimpleChatMessage(id: UUID().uuidString, content: "Hello.", isFromUser: false, timestamp: Date())
-        messages.append(welcomeMessage)
-        
-        if voiceService.isVoiceEnabled {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-                voiceService.speak("Hello. How can I help?")
-            }
-        }
+
+        // Connect the bidirectional WebSocket to Gemini Live API.
+        // Audio capture starts automatically when the session is ready
+        // (handled by .onChange(of: liveService.connectionState)).
+        liveService.connect()
     }
     
     private func endCall() {
-        voiceService.shouldAutoRestartListening = false
-        voiceService.stopListening()
+        liveService.disconnect()
         stopCallTimer()
-        
+
         withAnimation(.easeInOut(duration: 0.3)) {
             showCallInterface = false
         }
-        
-        // Add call summary
-        let endTime = Date()
-        let callSummary = SimpleChatMessage(id: UUID().uuidString, content: "Call ended. Duration: \(formatCallDuration(callDuration))", isFromUser: false, timestamp: endTime)
+
+        let callSummary = SimpleChatMessage(
+            id: UUID().uuidString,
+            content: "Call ended. Duration: \(formatCallDuration(callDuration))",
+            isFromUser: false,
+            timestamp: Date()
+        )
         messages.append(callSummary)
     }
     
@@ -435,27 +519,35 @@ struct SimpleChatView: View {
         isTyping = true
         print("🔄 Typing state set to true")
         
-        // Generate AI response
+        let historyForLLM = Array(messages.dropLast())
         Task {
-            print("🤖 Starting AI response generation...")
-            do {
-                let response = try await llmService.generateResponse(for: input, conversationHistory: Array(messages.dropLast()))
-                print("✅ AI response received: \(response)")
-                let aiMessage = SimpleChatMessage(id: UUID().uuidString, content: response, isFromUser: false, timestamp: Date())
-                
-                await MainActor.run {
+            let response: String
+            let fromPrefetch: Bool
+            if let cached = llmService.consumePrefetchIfMatches(input) {
+                print("⚡ Using prefetched LLM response (low latency)")
+                response = cached
+                fromPrefetch = true
+            } else {
+                print("🤖 Starting AI response generation…")
+                response = await llmService.generateResponse(for: input, conversationHistory: historyForLLM)
+                fromPrefetch = false
+            }
+            print("✅ AI response received: \(response.prefix(120))…")
+            let aiMessage = SimpleChatMessage(id: UUID().uuidString, content: response, isFromUser: false, timestamp: Date())
+            await MainActor.run {
+                isTyping = false
+                if fromPrefetch {
+                    showAssistantReplyImmediately(aiMessage)
+                } else {
                     startTypingAnimation(message: aiMessage)
-                }
-            } catch {
-                print("❌ AI response failed: \(error)")
-                await MainActor.run {
-                    // Reset isTyping on error to enable TextField
-                    isTyping = false
-                    let errorMessage = SimpleChatMessage(id: UUID().uuidString, content: "I'm having trouble connecting right now. Please try again later.", isFromUser: false, timestamp: Date())
-                    messages.append(errorMessage)
                 }
             }
         }
+    }
+    
+    /// No character-by-character delay — keeps total time closer to ~1.5s after user stops.
+    private func showAssistantReplyImmediately(_ message: SimpleChatMessage) {
+        messages.append(message)
     }
     
     // MARK: - Typing Animation
@@ -467,7 +559,7 @@ struct SimpleChatView: View {
         let fullText = message.content
         var currentIndex = 0
         
-        typingTimer = Timer.scheduledTimer(withTimeInterval: 0.03, repeats: true) { timer in
+        typingTimer = Timer.scheduledTimer(withTimeInterval: 0.018, repeats: true) { timer in
             if currentIndex < fullText.count {
                 let index = fullText.index(fullText.startIndex, offsetBy: currentIndex)
                 typingText += String(fullText[index])
@@ -476,20 +568,13 @@ struct SimpleChatView: View {
                 timer.invalidate()
                 typingTimer = nil
                 
-                // Complete message
                 messages.append(message)
                 currentTypingMessage = nil
                 typingText = ""
-                
-                // Speak response only if voice is enabled
-                if voiceService.isVoiceEnabled {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        voiceService.speak(fullText)
-                    }
-                }
             }
         }
     }
+    
 }
 
 // MARK: - Dashboard View
@@ -776,6 +861,8 @@ class SimpleVoiceService: NSObject, ObservableObject {
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private var silenceTimer: Timer?
+    private var speechPermissionGranted = false
+    private var micPermissionGranted = false
     
     // MARK: - Initialization
     override init() {
@@ -786,24 +873,36 @@ class SimpleVoiceService: NSObject, ObservableObject {
     
     // MARK: - Public Methods
     func requestPermissions() {
+        refreshAuthorizationStatus()
         SFSpeechRecognizer.requestAuthorization { status in
             DispatchQueue.main.async {
-                self.isAuthorized = status == .authorized
+                self.speechPermissionGranted = (status == .authorized)
+                self.updateAuthorizationState()
             }
         }
         
         AVAudioSession.sharedInstance().requestRecordPermission { granted in
             DispatchQueue.main.async {
-                if !granted {
-                    self.isAuthorized = false
-                }
+                self.micPermissionGranted = granted
+                self.updateAuthorizationState()
             }
         }
+    }
+
+    func refreshAuthorizationStatus() {
+        speechPermissionGranted = (SFSpeechRecognizer.authorizationStatus() == .authorized)
+        micPermissionGranted = (AVAudioSession.sharedInstance().recordPermission == .granted)
+        updateAuthorizationState()
+    }
+
+    private func updateAuthorizationState() {
+        isAuthorized = speechPermissionGranted && micPermissionGranted
     }
     
     /// Contextual vocabulary improves speech recognition accuracy (banking terms, recent topics)
     func startListening(contextualStrings: [String]? = nil) {
-        guard isAuthorized, !isListening else { return }
+        // Don't record while the agent is speaking — avoids echo and ensures we only respond after the user finishes
+        guard isAuthorized, !isListening, !isSpeaking else { return }
         
         do {
             try AVAudioSession.sharedInstance().setCategory(.record, mode: .measurement, options: .duckOthers)
@@ -838,17 +937,16 @@ class SimpleVoiceService: NSObject, ObservableObject {
             print("Audio engine error: \(error)")
         }
         
+        // Commit only after the user pauses (silence), not on Apple's isFinal (can fire before they're done talking)
         recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { result, error in
             DispatchQueue.main.async {
                 if let result = result {
                     let text = result.bestTranscription.formattedString
                     self.transcript = text
-                    if result.isFinal {
-                        self.finalTranscript = text
-                        self.stopListening()
-                        return
+                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        self.resetSilenceTimer()
                     }
-                    self.resetSilenceTimer()
                 }
                 if error != nil {
                     self.stopListening()
@@ -873,15 +971,22 @@ class SimpleVoiceService: NSObject, ObservableObject {
         transcript = ""
     }
     
+    /// ~970ms without new words → user finished speaking, then we send to the LLM.
+    private static let endOfSpeechSilence: TimeInterval = 0.97
+    
     private func resetSilenceTimer() {
         silenceTimer?.invalidate()
-        silenceTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
+        let timer = Timer(timeInterval: Self.endOfSpeechSilence, repeats: false) { [weak self] _ in
             DispatchQueue.main.async {
-                guard let self = self, self.isListening, !self.transcript.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                self.finalTranscript = self.transcript
+                guard let self = self, self.isListening else { return }
+                let trimmed = self.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                self.finalTranscript = trimmed
                 self.stopListening()
             }
         }
+        RunLoop.main.add(timer, forMode: .common)
+        silenceTimer = timer
     }
     
     func speak(_ text: String) {
@@ -908,41 +1013,144 @@ class RealLLMService: ObservableObject {
     // MARK: - Published Properties
     @Published var isLoading = false
     @Published var error: String?
+    @Published var usedRealAPI = false  // Track if real LLM responded
     
     // MARK: - Private Properties
-    private let apiKey = "AIzaSyAmlWf2ZfoB1yWtBd6Nqud2MeV0RLFXGcU" // Gemini API key - move to env in production
-    private let modelName = "gemini-1.5-flash" // Fast, capable, good for voice
+    private let apiKey = "AIzaSyCsIemIOnJZJUyH5zIi981CskbtlGBxE6o" // Gemini API key - move to env in production
+    /// Gemini Flash — fast, low-latency (if your key returns 404, try `gemini-2.0-flash`)
+    private let modelName = "gemini-2.5-flash"
     private let baseURL = "https://generativelanguage.googleapis.com/v1beta/models"
+    private lazy var apiURLSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 10
+        config.timeoutIntervalForResource = 12
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }()
+    private let llmNetworkTimeout: TimeInterval = 8
+    /// After partials pause this long, prefetch runs while the user may still be talking (before ~970ms end-of-speech).
+    private static let prefetchStableDelay: TimeInterval = 0.18
+    /// Minimum spoken length before we hit the API (keeps prefetch useful but avoids spam on “uh”).
+    private static let prefetchMinCharacterCount = 4
+    private var prefetchDebounceTask: Task<Void, Never>?
+    private var prefetchGeneration: UInt64 = 0
+    private var prefetchedForNormalizedInput: String?
+    private var prefetchedAnswer: String?
     
     private static let systemPromptBase = """
-    You are the RBC Royal Agent - a friendly AI assistant for Royal Bank of Canada.
-    
-    LISTENING: Pay close attention to every word the user says. Their message is exactly what they spoke - use it as their full question or request. Don't paraphrase or assume; respond to what they actually said.
-    
-    VOICE-FIRST: Users hear your replies. Keep responses concise (2-4 sentences), clear, and natural - like speaking to a friend.
-    
-    YOU CAN ANSWER: Banking, finances, general knowledge, life advice, casual chat - anything helpful.
-    
-    RULES:
-    - Never make up specific account numbers or balances
-    - For finance: be accurate, suggest professionals for major decisions
-    - Stay positive and helpful
+    You are the RBC Royal Agent — an expert AI banking assistant for Royal Bank of Canada.
+
+    You have access to retrieved RBC documents provided below as CONTEXT. Always prioritize information from these documents over your general knowledge.
+
+    RESPONSE RULES:
+    - Answer based on the provided CONTEXT first. If the context contains the answer, use it.
+    - If the context is insufficient, use your general knowledge but clearly state "Based on general information..." so the user knows.
+    - Be accurate and specific — cite product names, rates, and policy details exactly as they appear in the context.
+    - Keep answers clear and well-structured: 3-6 sentences for simple questions, bullet points for complex ones.
+    - Never fabricate account numbers, balances, rates, or policy details.
+    - For major financial decisions, recommend speaking with an RBC advisor.
     """
     
+    /// Call on each partial transcript update while the user is speaking — debounces then prefetches with the **latest** text so answers are generated during speech when possible.
+    func scheduleVoicePrefetch(transcript: String, conversationHistory: [SimpleChatMessage], latestTranscript: (() -> String)? = nil) {
+        prefetchDebounceTask?.cancel()
+        prefetchGeneration += 1
+        let generation = prefetchGeneration
+        let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= Self.prefetchMinCharacterCount else {
+            if trimmed.isEmpty {
+                prefetchedForNormalizedInput = nil
+                prefetchedAnswer = nil
+            }
+            return
+        }
+        let historySnapshot = conversationHistory
+        prefetchDebounceTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.prefetchStableDelay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            guard let self = self else { return }
+            guard generation == self.prefetchGeneration else { return }
+            let resolved: String
+            if let latest = latestTranscript {
+                resolved = await MainActor.run { latest().trimmingCharacters(in: .whitespacesAndNewlines) }
+            } else {
+                resolved = trimmed
+            }
+            guard resolved.count >= Self.prefetchMinCharacterCount else { return }
+            let answer = await self.generateResponse(for: resolved, conversationHistory: historySnapshot, skipLoadingUI: true)
+            guard !Task.isCancelled, generation == self.prefetchGeneration else { return }
+            await MainActor.run {
+                guard generation == self.prefetchGeneration else { return }
+                self.prefetchedForNormalizedInput = resolved
+                self.prefetchedAnswer = answer
+            }
+        }
+    }
+    
+    /// If prefetch was for the exact final utterance, return it and skip a second network round-trip.
+    func consumePrefetchIfMatches(_ userInput: String) -> String? {
+        let t = userInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let pin = prefetchedForNormalizedInput, let ans = prefetchedAnswer, pin == t else { return nil }
+        prefetchedForNormalizedInput = nil
+        prefetchedAnswer = nil
+        prefetchGeneration += 1
+        prefetchDebounceTask?.cancel()
+        prefetchDebounceTask = nil
+        return ans
+    }
+    
+    func clearVoicePrefetch() {
+        prefetchDebounceTask?.cancel()
+        prefetchDebounceTask = nil
+        prefetchGeneration += 1
+        prefetchedForNormalizedInput = nil
+        prefetchedAnswer = nil
+    }
+    
+    // MARK: - Test Function
+    func testLLMConnection() async {
+        print("🧪 Testing Gemini API… model=\(modelName)")
+        let testInput = "Reply with exactly: OK"
+        let response = await generateResponse(for: testInput, conversationHistory: [])
+        if usedRealAPI {
+            print("✅ API test OK — real model output: \(response.prefix(200))")
+        } else {
+            print("⚠️ API test used offline fallback: \(response.prefix(200))")
+        }
+    }
+    
     // MARK: - Public Methods
-    func generateResponse(for input: String, conversationHistory: [SimpleChatMessage] = []) async throws -> String {
-        print("🔍 Generating response for: \(input)")
-        isLoading = true
+    /// Always returns a string: real API text when possible, otherwise offline fallback (never throws).
+    func generateResponse(for input: String, conversationHistory: [SimpleChatMessage] = [], skipLoadingUI: Bool = false) async -> String {
+        print("🔍 Generating response for: \(input.prefix(80))…")
+        if !skipLoadingUI {
+            isLoading = true
+        }
         error = nil
-        defer { isLoading = false }
+        defer {
+            if !skipLoadingUI {
+                isLoading = false
+            }
+        }
         
         do {
-            let response = try await callGeminiAPI(input: input, history: conversationHistory)
-            print("✅ Generated response: \(response.prefix(100))...")
-            return response
+            let text = try await withThrowingTaskGroup(of: String.self) { group in
+                group.addTask(priority: .userInitiated) {
+                    try await self.callGeminiAPI(input: input, history: conversationHistory)
+                }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: UInt64(self.llmNetworkTimeout * 1_000_000_000))
+                    throw LLMError.timeout
+                }
+                let first = try await group.next()!
+                group.cancelAll()
+                return first
+            }
+            usedRealAPI = true
+            return text
         } catch {
-            print("❌ API error, using fallback: \(error)")
-            // Don't set error - we're returning a fallback response successfully
+            usedRealAPI = false
+            print("⚠️ LLM API error, using fallback: \(error.localizedDescription)")
             return getFallbackResponse(for: input)
         }
     }
@@ -951,8 +1159,8 @@ class RealLLMService: ObservableObject {
     private func callGeminiAPI(input: String, history: [SimpleChatMessage]) async throws -> String {
         var contents: [[String: Any]] = []
         
-        // Add conversation history (last 12 messages for strong context awareness)
-        let recentHistory = Array(history.suffix(12))
+        // Shorter history = smaller payload + faster responses (voice-friendly)
+        let recentHistory = Array(history.suffix(6))
         for msg in recentHistory {
             let role = msg.isFromUser ? "user" : "model"
             contents.append([
@@ -979,9 +1187,9 @@ class RealLLMService: ObservableObject {
             ],
             "contents": contents,
             "generationConfig": [
-                "temperature": 0.75,
+                "temperature": 0.7,
                 "topP": 0.9,
-                "topK": 32,
+                "topK": 40,
                 "maxOutputTokens": 256
             ]
         ]
@@ -993,10 +1201,10 @@ class RealLLMService: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 15
+        request.timeoutInterval = 10
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await apiURLSession.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw LLMError.unknownError(NSError(domain: "LLM", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid response"]))
@@ -1011,14 +1219,21 @@ class RealLLMService: ObservableObject {
             throw LLMError.serverError(httpResponse.statusCode)
         }
         
-        let geminiResponse = try JSONDecoder().decode(GeminiResponse.self, from: data)
+        let geminiResponse: GeminiResponse
+        do {
+            geminiResponse = try JSONDecoder().decode(GeminiResponse.self, from: data)
+        } catch {
+            print("⚠️ Gemini JSON decode failed: \(error)")
+            throw LLMError.encodingError
+        }
         guard let candidate = geminiResponse.candidates?.first,
-              let text = candidate.content.parts.first?.text,
+              let part = candidate.content.parts?.first,
+              let text = part.text,
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            if let blockReason = geminiResponse.candidates?.first?.finishReason {
-                print("⚠️ Response blocked: \(blockReason)")
+            if let fr = geminiResponse.candidates?.first?.finishReason {
+                print("⚠️ No text in response, finishReason: \(fr)")
             }
-            return getFallbackResponse(for: input)
+            throw LLMError.noResponse
         }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -1026,12 +1241,12 @@ class RealLLMService: ObservableObject {
     /// Build a short context summary so the LLM understands follow-up questions ("it", "that", etc.)
     private func buildConversationContext(history: [SimpleChatMessage], currentInput: String) -> String {
         guard history.count >= 2 else { return "" }
-        let lastExchange = Array(history.suffix(4))
+        let lastExchange = Array(history.suffix(2))
         var parts: [String] = []
         for msg in lastExchange {
             let role = msg.isFromUser ? "User" : "You"
-            let excerpt = String(msg.content.prefix(80))
-            if excerpt.count == 80 { parts.append("\(role): \(excerpt)...") }
+            let excerpt = String(msg.content.prefix(50))
+            if excerpt.count == 50 { parts.append("\(role): \(excerpt)...") }
             else { parts.append("\(role): \(excerpt)") }
         }
         return parts.joined(separator: "\n")
@@ -1074,11 +1289,11 @@ struct Candidate: Codable {
 }
 
 struct Content: Codable {
-    let parts: [Part]
+    let parts: [Part]?
 }
 
 struct Part: Codable {
-    let text: String
+    let text: String?
 }
 
 // MARK: - Error Types
@@ -1088,6 +1303,8 @@ enum LLMError: Error, LocalizedError {
     case noInternet
     case serverError(Int)
     case unknownError(Error)
+    case timeout
+    case noResponse
     
     var errorDescription: String? {
         switch self {
@@ -1101,6 +1318,10 @@ enum LLMError: Error, LocalizedError {
             return "Server error with code \(code). Please try again later."
         case .unknownError(let error):
             return "An unexpected error occurred: \(error.localizedDescription)"
+        case .timeout:
+            return "Response timeout - waiting for LLM"
+        case .noResponse:
+            return "LLM didn't respond - please try again"
         }
     }
 }
